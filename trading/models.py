@@ -1,55 +1,70 @@
+import time
 from decimal import Decimal
 
 from django.db import models
 
-from HFT.models import BaseModel
-from api_manager.manager import MEXC
+from utils.models import BaseModel
+from utils.bases import *
+from api_manager.bybit_api import Bybit
+from api_manager.mexc_api import MEXC
 # Create your models here.
 
 
-class Account(BaseModel):
+class Currency(BaseModel):
+    symbol = models.CharField(max_length=255)
+    precision = models.IntegerField(default=8)
+
+    def __str__(self):
+        return self.symbol
+
+
+class Market(BaseModel):
     class Exchange(models.TextChoices):
         MEXC = "MEXC"
         BingX = "BingX"
         Kucoin = "Kucoin"
+        Bybit = "Bybit"
 
-    exchange = models.CharField(max_length=50, choices=Exchange.choices)
-    api_key = models.CharField(max_length=50)
-    api_secret = models.CharField(max_length=50)
-
-
-class Market(BaseModel):
     class Type(models.TextChoices):
         Spot = "Spot"
         Margin = "Margin"
         Futures = "Futures"
 
-    exchange = models.CharField(max_length=50, choices=Account.Exchange.choices)
+    exchange = models.CharField(max_length=50, choices=Exchange.choices)
+    first_currency = models.ForeignKey('Currency', on_delete=models.SET_NULL, null=True,
+                                       related_name='first_currency')
+    second_currency = models.ForeignKey('Currency', on_delete=models.SET_NULL, null=True,
+                                        related_name='second_currency')
     symbol = models.CharField(max_length=50)
     market_type = models.CharField(max_length=50, choices=Type.choices)
+    fee = models.DecimalField(max_digits=20, decimal_places=8, default=Decimal('0.001'))
+
+    def __str__(self):
+        return f'{self.symbol}_{self.exchange}_{self.market_type}'
 
     def get_exchange_object(self):
-        if self.exchange == Account.Exchange.MEXC:
-            account = Account.objects.get(exchange=self.exchange)
-            return MEXC(api_key=account.api_key, api_secret=account.api_secret)
+        if self.exchange == Market.Exchange.MEXC.value:
+            return MEXC()
+        elif self.exchange == Market.Exchange.Bybit.value:
+            return Bybit()
         else:
             raise NotImplementedError
 
 
 class Order(BaseModel):
     class Side(models.TextChoices):
-        BUY = "BUY"
-        SELL = "SELL"
+        BUY = "Buy"
+        SELL = "Sell"
 
     class OrderType(models.TextChoices):
-        LIMIT = "LIMIT"
-        MARKET = "MARKET"
+        LIMIT = "Limit"
+        MARKET = "Market"
 
     class Status(models.TextChoices):
-        PENDING = "Pending"
+        PENDING = "New"
         FILLED = "Filled"
-        PARTIALLY_FIELD = "Partially Field"
-        PARTIALLY_FILLED_DONE = "Partially Filled Done"
+        PARTIALLY_FIELD = "PartiallyFilled"
+        PARTIALLY_FILLED_CANCELLED = "PartiallyFilledCanceled"
         CANCELLED = "Cancelled"
 
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
@@ -60,14 +75,15 @@ class Order(BaseModel):
     amount = models.DecimalField(max_digits=32, decimal_places=16)
     filled_amount = models.DecimalField(max_digits=32, decimal_places=16, null=True, blank=True)
     price = models.DecimalField(max_digits=32, decimal_places=16, null=True, blank=True)
-    average_price = models.DecimalField(max_digits=32, decimal_places=16)
-    status = models.CharField(max_length=50, choices=Status.choices)
+    average_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    status = models.CharField(max_length=50, choices=Status.choices, default=Status.PENDING.value)
     take_profit_price = models.DecimalField(max_digits=32, decimal_places=16, null=True, blank=True)
     stop_loss_price = models.DecimalField(max_digits=32, decimal_places=16, null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.pk:
             self.symbol = self.market.symbol
+            self.amount = truncate(self.amount, self.market.first_currency.precision)
             super().save(*args, **kwargs)
             self.place_order()
         else:
@@ -75,21 +91,25 @@ class Order(BaseModel):
 
     def place_order(self):
         exchange_obj = self.market.get_exchange_object()
-        exchange_obj.place_market_order(symbol=self.symbol, amount=self.amount, side=self.side, unique_id=self.id,
-                                        market_type=self.market.market_type)
+        response = exchange_obj.place_market_order(symbol=self.symbol,
+                                                   amount=self.amount,
+                                                   side=self.side, unique_id=self.id,
+                                                   order_type=self.order_type,
+                                                   take_profit=self.take_profit_price,
+                                                   stop_loss=self.stop_loss_price)
+        print(response)
         self.update_status()
 
     def update_status(self):
         exchange_obj = self.market.get_exchange_object()
         order_details = exchange_obj.get_order_details(unique_id=self.id)
-        self.filled_amount = order_details['filled_amount']
-        self.average_price = order_details['price']
-        self.status = order_details['status']
+        self.filled_amount = order_details['cumExecQty']
+        self.average_price = order_details['avgPrice']
+        self.status = order_details['orderStatus']
         self.save(update_fields=['filled_amount', 'average_price', 'status', 'updated_at'])
 
 
 class Trade(BaseModel):
-    account = models.ForeignKey("Account", on_delete=models.SET_NULL, null=True)
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
     order = models.ForeignKey("Order", on_delete=models.SET_NULL, null=True)
     symbol = models.CharField(max_length=50)
@@ -118,26 +138,45 @@ class Position(BaseModel):
         OPEN = "Open"
         CLOSED = "Closed"
 
+    class Side(models.TextChoices):
+        Long = "Long"
+        Short = "Short"
+
+    trace = models.TextField(null=True, blank=True)
     strategy = models.ForeignKey("Strategy", on_delete=models.SET_NULL, null=True)
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
     symbol = models.CharField(max_length=50)
-    amount = models.DecimalField(max_digits=32, decimal_places=16)
-    unrealized_usdt_pnl = models.DecimalField(max_digits=32, decimal_places=16)
-    realized_usdt_pnl = models.DecimalField(max_digits=32, decimal_places=16)
-    average_entry_price = models.DecimalField(max_digits=32, decimal_places=16)
-    take_profit_price = models.DecimalField(max_digits=32, decimal_places=16)
-    stop_loss_price = models.DecimalField(max_digits=32, decimal_places=16)
+    amount = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    value = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    unrealized_usdt_pnl = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    realized_usdt_pnl = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    average_entry_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    take_profit_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    stop_loss_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
     status = models.CharField(max_length=50, choices=Status.choices, default=Status.Initiated.value)
+    side = models.CharField(max_length=50, choices=Side.choices, null=True, blank=True)
+
+    def add_trace(self, log):
+        print(log)
+        if self.trace is None:
+            self.trace = log
+        else:
+            self.trace += log
+        self.save(update_fields=['trace', 'updated_at'])
 
     @staticmethod
     def check_active_strategies_and_open_position():
         strategies = Strategy.objects.filter(active=True)
         for strategy in strategies:
             if strategy.strategy_type == Strategy.Type.RecentCandle:
-                if Position.objects.filter(market=strategy.market, status__in=[Position.Status.Initiated.value,
-                                                                               Position.Status.OPEN.value]).exists():
+                if Position.objects.filter(market=strategy.market, status=Position.Status.OPEN.value).exists():
                     continue
-                Position.objects.create(strategy=strategy)
+                initiated_position: Position = Position.objects.filter(market=strategy.market,
+                                                                       status=Position.Status.Initiated.value).last()
+                if initiated_position is not None:
+                    initiated_position.check_and_open()
+                else:
+                    Position.objects.create(strategy=strategy)
             else:
                 raise NotImplementedError
 
@@ -154,28 +193,45 @@ class Position(BaseModel):
         if not self.pk:
             self.market = self.strategy.market
             self.symbol = self.market.symbol
-            super().save(*args, *kwargs)
-            if self.strategy == Strategy.Type.RecentCandle:
-                self.check_and_open_position_based_on_recent_candle()
-            else:
-                raise NotImplementedError
+            super().save(*args, **kwargs)
+            self.check_and_open()
         else:
-            super().save(*args, *kwargs)
+            super().save(*args, **kwargs)
+
+    def check_and_open(self):
+        if self.strategy.strategy_type == Strategy.Type.RecentCandle.value:
+            self.check_and_open_position_based_on_recent_candle()
+        else:
+            raise NotImplementedError
 
     def check_and_open_position_based_on_recent_candle(self):
+        if self.status == Position.Status.OPEN.value:
+            self.add_trace("position is open!!!")
+            return
         exchange_obj = self.market.get_exchange_object()
-        recent_candle = exchange_obj.get_recent_candle()
-        balance = exchange_obj.get_balance(wallet=self.market.market_type, symbol=self.symbol)['usdt_amount']
-        amount_to_open = Decimal(str(balance)) * self.strategy.order_size_from_basket
-        if recent_candle['open'] < recent_candle['close']:
+        recent_candles = exchange_obj.get_recent_candle(symbol=self.symbol)
+        volatility = self.calculate_volatility(recent_candles)
+        balance = Decimal(str(exchange_obj.get_balance(currency=self.market.second_currency.symbol)))
+        order_book = exchange_obj.get_order_book(symbol=self.symbol)
+        value_to_open = Decimal(str(balance)) * self.strategy.leverage
+        self.add_trace(f"high, low: {recent_candles[-1][1]}, {recent_candles[0][4]}")
+        if recent_candles[-1][1] < recent_candles[0][4]:
+            best_bid_price = Decimal(str(order_book['result']['b'][0][0]))
+            self.calculate_sl_tp(price=best_bid_price, side=Order.Side.BUY.value)
+            self.check_volatility(volatility=volatility, best_price=best_bid_price)
+            amount_to_open = (value_to_open / best_bid_price) * Decimal('0.9')
             self.open_long_position(amount=amount_to_open)
-        elif recent_candle['open'] > recent_candle['close']:
+        elif recent_candles[-1][1] > recent_candles[0][4]:
+            best_ask_price = Decimal(str(order_book['result']['a'][0][0]))
+            amount_to_open = (value_to_open / best_ask_price) * Decimal('0.9')
+            self.calculate_sl_tp(price=best_ask_price, side=Order.Side.SELL.value)
+            self.check_volatility(volatility=volatility, best_price=best_ask_price)
             self.open_short_position(amount=amount_to_open)
         else:
             return
 
     def check_and_manage_position(self):
-        if self.strategy == Strategy.Type.RecentCandle.value:
+        if self.strategy.strategy_type == Strategy.Type.RecentCandle.value:
             self.manage_recent_candle_strategy()
         else:
             raise NotImplementedError
@@ -188,20 +244,25 @@ class Position(BaseModel):
             raise Exception("Position is not Open")
 
     def open_long_position(self, amount):
-        self.open_position()
+        self.add_trace("open_long_position")
+        self.open_position(side=Position.Side.Long.value)
         Order.objects.create(market=self.market, position=self, amount=amount,
-                             side=Order.Side.BUY.value, order_type=Order.OrderType.MARKET.value, take_profit=self.take_profit_price)
+                             side=Order.Side.BUY.value, order_type=Order.OrderType.MARKET.value,
+                             take_profit_price=self.take_profit_price, stop_loss_price=self.stop_loss_price)
         self.update_status()
 
     def open_short_position(self, amount):
-        self.open_position()
+        self.add_trace("open_short_position")
+        self.open_position(side=Position.Side.Short.value)
         Order.objects.create(market=self.market, position=self, amount=amount,
-                             side=Order.Side.SELL.value, order_type=Order.OrderType.MARKET.value)
+                             side=Order.Side.SELL.value, order_type=Order.OrderType.MARKET.value,
+                             take_profit_price=self.take_profit_price, stop_loss_price=self.stop_loss_price)
         self.update_status()
 
-    def open_position(self):
+    def open_position(self, side):
         self.status = Position.Status.OPEN.value
-        self.save(update_fields=['status', 'updated_at'])
+        self.side = side
+        self.save(update_fields=['status', 'side', 'updated_at'])
 
     def update_status(self):
         exchange_obj = self.market.get_exchange_object()
@@ -209,27 +270,120 @@ class Position(BaseModel):
         self.update_fields_based_on_position(position_details=position_details)
 
     def update_fields_based_on_position(self, position_details):
-        raise NotImplementedError
+        """
+        {'retCode': 0,
+         'retMsg': 'OK',
+         'result': {'nextPageCursor': 'BTCUSDT%2C1715191462644%2C0',
+          'category': 'linear',
+          'list': [{'symbol': 'BTCUSDT',
+            'leverage': '100',
+            'autoAddMargin': 0,
+            'avgPrice': '0',
+            'liqPrice': '',
+            'riskLimitValue': '2000000',
+            'takeProfit': '',
+            'positionValue': '',
+            'isReduceOnly': False,
+            'tpslMode': 'Full',
+            'riskId': 1,
+            'trailingStop': '0',
+            'unrealisedPnl': '',
+            'markPrice': '62595.9',
+            'adlRankIndicator': 0,
+            'cumRealisedPnl': '-0.1469502',
+            'positionMM': '0',
+            'createdTime': '1715111020486',
+            'positionIdx': 0,
+            'positionIM': '0',
+            'seq': 173265968624,
+            'updatedTime': '1715191462644',
+            'side': '',
+            'bustPrice': '',
+            'positionBalance': '0',
+            'leverageSysUpdatedTime': '',
+            'curRealisedPnl': '0',
+            'size': '0',
+            'positionStatus': 'Normal',
+            'mmrSysUpdatedTime': '',
+            'stopLoss': '',
+            'tradeMode': 0,
+            'sessionAvgPrice': ''}]},
+         'retExtInfo': {},
+         'time': 1715191641476}
+        """
+        data = position_details['result']['list'][0]
+        self.amount = Decimal(data['size']) if data['size'] != '0' else self.amount
+        self.value = Decimal(data['positionValue']) if data['positionValue'] not in ['0', ''] else self.value
+        self.unrealized_usdt_pnl = Decimal(data['curRealisedPnl']) if data['curRealisedPnl'] != '0' else (
+            self.unrealized_usdt_pnl)
+        self.average_entry_price = Decimal(data['avgPrice']) if data['avgPrice'] != '0' else self.average_entry_price
+        if data['positionValue'] in ['0', '']:
+            self.status = Position.Status.CLOSED.value
+        self.save(update_fields=['amount', 'value', 'status', 'unrealized_usdt_pnl',
+                                 'average_entry_price', 'updated_at'])
 
     def close_position_if_tp_or_sl_reached(self):
+        if self.status == Position.Status.CLOSED.value:
+            return
         exchange_obj = self.market.get_exchange_object()
         order_book = exchange_obj.get_order_book(symbol=self.symbol)
-        if self.amount > 0:
-            best_bid_price = order_book['bids'][-1]['price']
+        print("check tp sl")
+        if self.side == Position.Side.Long.value:
+            best_bid_price = Decimal(str(order_book['result']['b'][0][0]))
             if best_bid_price >= self.take_profit_price:
-                self.close_position()
+                self.add_trace("tp reached, close position")
+                self.close_position(side=Order.Side.SELL.value)
             elif best_bid_price <= self.stop_loss_price:
-                self.close_position()
-        elif self.amount < 0:
-            best_ask_price = order_book['asks'][-1]['price']
+                self.add_trace("sl reached, close position")
+                self.close_position(side=Order.Side.SELL.value)
+        elif self.side == Position.Side.Short.value:
+            best_ask_price = Decimal(str(order_book['result']['a'][0][0]))
             if best_ask_price <= self.take_profit_price:
-                self.close_position()
+                self.add_trace("tp reached, close position")
+                self.close_position(side=Order.Side.BUY.value)
             elif best_ask_price >= self.stop_loss_price:
-                self.close_position()
+                self.add_trace("sl reached, close position")
+                self.close_position(side=Order.Side.BUY.value)
 
-    def close_position(self):
+    def close_position(self, side):
         exchange_obj = self.market.get_exchange_object()
-        exchange_obj.close_position(symbol=self.symbol)
+        exchange_obj.close_position(symbol=self.symbol, side=side)
         self.update_status()
 
+    def calculate_sl_tp(self, price, side):
+        total_fee = 2 * self.market.fee
+        if side == Order.Side.BUY.value:
+            profit_change = (self.strategy.take_profit / self.strategy.leverage) / 100
+            take_profit_price = price * (1 + profit_change + total_fee)
+            loss_change = (self.strategy.stop_loss / self.strategy.leverage) / 100
+            stop_loss_price = price * (1 - loss_change + total_fee)
+            self.take_profit_price, self.stop_loss_price = take_profit_price, stop_loss_price
+            self.save(update_fields=['take_profit_price', 'stop_loss_price', 'updated_at'])
+            return self.take_profit_price, self.stop_loss_price
+        elif side == Order.Side.SELL.value:
+            profit_change = (self.strategy.take_profit / self.strategy.leverage) / 100
+            take_profit_price = price * (1 - profit_change - total_fee)
+            loss_change = (self.strategy.stop_loss / self.strategy.leverage) / 100
+            stop_loss_price = price * (1 + loss_change - total_fee)
+            self.take_profit_price, self.stop_loss_price = take_profit_price, stop_loss_price
+            self.save(update_fields=['take_profit_price', 'stop_loss_price', 'updated_at'])
+            return self.take_profit_price, self.stop_loss_price
+        else:
+            raise Exception('Invalid side')
 
+    @staticmethod
+    def calculate_volatility(recent_candles):
+        sorted_candles = sorted(recent_candles, key=lambda x: x[0])
+
+        max_high_price = max([Decimal(value[2]) for value in sorted_candles])
+        min_low_price = min([Decimal(value[3]) for value in sorted_candles])
+
+        change = ((max_high_price - min_low_price) / min_low_price)
+
+        return change
+
+    def check_volatility(self, volatility, best_price):
+        change_to_reach_tp = (self.take_profit_price - best_price) / best_price
+        if abs(change_to_reach_tp) > (Decimal('2') * volatility):
+            raise Exception('Volatility too low')
+        self.add_trace(f"volatility: {volatility}, change to reach: {change_to_reach_tp}")
