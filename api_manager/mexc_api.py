@@ -112,3 +112,6 @@ class MEXC(APIManagerInterface):
 
     def close_position(self, symbol, side):
         raise NotImplementedError
+
+    def set_sl_tp(self, symbol, tp_price, sl_price):
+        raise NotImplementedError

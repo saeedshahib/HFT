@@ -8,10 +8,14 @@ from django.conf import settings
 
 class Bybit(APIManagerInterface):
     def __init__(self):
+        demo = True
+        api_key = settings.BYBIT_API_KEY if demo is False else settings.BYBIT_API_KEY_TESTNET
+        api_secret = settings.BYBIT_API_SECRET if demo is False else settings.BYBIT_API_SECRET_TESTNET
         self.session = HTTP(
             testnet=False,
-            api_key=settings.BYBIT_API_KEY,
-            api_secret=settings.BYBIT_API_SECRET,
+            api_key=api_key,
+            api_secret=api_secret,
+            demo=demo
         )
 
     def get_recent_candle(self, symbol):
@@ -27,9 +31,11 @@ class Bybit(APIManagerInterface):
                            stop_loss=None):
         # order_type = 'Market'
         # side = 'Buy' or 'Sell'
-        return self.session.place_order(category='linear', symbol=symbol, side=side, orderType=order_type,
-                                        qty=str(amount), orderLinkId=str(unique_id), isLeverage=leverage,
-                                        takeProfit=str(take_profit), stopLoss=str(stop_loss))
+        data = dict(category='linear', symbol=symbol, side=side, orderType=order_type,
+                    qty=str(amount), orderLinkId=str(unique_id), isLeverage=leverage,
+                    takeProfit=str(take_profit), stopLoss=str(stop_loss))
+        print(data)
+        return self.session.place_order(**data)
 
     def get_order_details(self, unique_id):
         return self.session.get_order_history(category='linear', orderLinkId=str(unique_id))['result']['list'][0]
@@ -43,3 +49,7 @@ class Bybit(APIManagerInterface):
     def close_position(self, symbol, side):
         return self.session.place_order(category='linear', symbol=symbol, qty='0', reduceOnly=True,
                                         closeOnTrigger=True, orderType='Market', side=side)
+
+    def set_sl_tp(self, symbol, tp_price, sl_price):
+        return self.session.set_trading_stop(category='linear', symbol=symbol, orderType='Market',
+                                             takeProfit=str(tp_price), stopLoss=str(sl_price))

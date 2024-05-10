@@ -1,4 +1,5 @@
 import time
+import traceback
 from decimal import Decimal
 
 from django.db import models
@@ -7,6 +8,7 @@ from utils.models import BaseModel
 from utils.bases import *
 from api_manager.bybit_api import Bybit
 from api_manager.mexc_api import MEXC
+from utils.redis import *
 # Create your models here.
 
 
@@ -122,6 +124,7 @@ class Trade(BaseModel):
 class Strategy(BaseModel):
     class Type(models.TextChoices):
         RecentCandle = "Recent Candle"
+        WebsocketChange = "Websocket Change"
 
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
     strategy_type = models.CharField(max_length=50, choices=Type.choices)
@@ -130,6 +133,7 @@ class Strategy(BaseModel):
     order_size_from_basket = models.DecimalField(max_digits=32, decimal_places=16)
     take_profit = models.DecimalField(max_digits=32, decimal_places=16)
     stop_loss = models.DecimalField(max_digits=32, decimal_places=16)
+    sensitivity = models.DecimalField(max_digits=32, decimal_places=16, null=True, blank=True)
 
 
 class Position(BaseModel):
@@ -142,6 +146,9 @@ class Position(BaseModel):
         Long = "Long"
         Short = "Short"
 
+    class VolatilityTooLow(Exception):
+        pass
+
     trace = models.TextField(null=True, blank=True)
     strategy = models.ForeignKey("Strategy", on_delete=models.SET_NULL, null=True)
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
@@ -153,6 +160,7 @@ class Position(BaseModel):
     average_entry_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
     take_profit_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
     stop_loss_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    break_even_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
     status = models.CharField(max_length=50, choices=Status.choices, default=Status.Initiated.value)
     side = models.CharField(max_length=50, choices=Side.choices, null=True, blank=True)
 
@@ -168,17 +176,22 @@ class Position(BaseModel):
     def check_active_strategies_and_open_position():
         strategies = Strategy.objects.filter(active=True)
         for strategy in strategies:
-            if strategy.strategy_type == Strategy.Type.RecentCandle:
-                if Position.objects.filter(market=strategy.market, status=Position.Status.OPEN.value).exists():
-                    continue
-                initiated_position: Position = Position.objects.filter(market=strategy.market,
-                                                                       status=Position.Status.Initiated.value).last()
-                if initiated_position is not None:
-                    initiated_position.check_and_open()
+            try:
+                if strategy.strategy_type == Strategy.Type.RecentCandle:
+                    if Position.objects.filter(market=strategy.market, status=Position.Status.OPEN.value).exists():
+                        continue
+                    initiated_position: Position = Position.objects.filter(market=strategy.market,
+                                                                           status=Position.Status.Initiated.value).last()
+                    if initiated_position is not None:
+                        initiated_position.check_and_open()
+                    else:
+                        Position.objects.create(strategy=strategy)
                 else:
-                    Position.objects.create(strategy=strategy)
-            else:
-                raise NotImplementedError
+                    continue
+            except Position.VolatilityTooLow:
+                continue
+            except Exception as e:
+                print(e)
 
     @staticmethod
     def check_open_positions():
@@ -187,7 +200,7 @@ class Position(BaseModel):
             try:
                 position.check_and_manage_position()
             except Exception as ve:
-                print(ve)
+                print(traceback.format_exc())
 
     def save(self, *args, **kwargs):
         if not self.pk:
@@ -201,8 +214,8 @@ class Position(BaseModel):
     def check_and_open(self):
         if self.strategy.strategy_type == Strategy.Type.RecentCandle.value:
             self.check_and_open_position_based_on_recent_candle()
-        else:
-            raise NotImplementedError
+        elif self.strategy.strategy_type == Strategy.Type.WebsocketChange.value:
+            self.open_position_based_on_websocket_change()
 
     def check_and_open_position_based_on_recent_candle(self):
         if self.status == Position.Status.OPEN.value:
@@ -218,20 +231,21 @@ class Position(BaseModel):
         if recent_candles[-1][1] < recent_candles[0][4]:
             best_bid_price = Decimal(str(order_book['result']['b'][0][0]))
             self.calculate_sl_tp(price=best_bid_price, side=Order.Side.BUY.value)
-            self.check_volatility(volatility=volatility, best_price=best_bid_price)
+            self.check_volatility(volatility=volatility)
             amount_to_open = (value_to_open / best_bid_price) * Decimal('0.9')
             self.open_long_position(amount=amount_to_open)
         elif recent_candles[-1][1] > recent_candles[0][4]:
             best_ask_price = Decimal(str(order_book['result']['a'][0][0]))
             amount_to_open = (value_to_open / best_ask_price) * Decimal('0.9')
             self.calculate_sl_tp(price=best_ask_price, side=Order.Side.SELL.value)
-            self.check_volatility(volatility=volatility, best_price=best_ask_price)
+            self.check_volatility(volatility=volatility)
             self.open_short_position(amount=amount_to_open)
         else:
             return
 
     def check_and_manage_position(self):
-        if self.strategy.strategy_type == Strategy.Type.RecentCandle.value:
+        if self.strategy.strategy_type in [Strategy.Type.RecentCandle.value,
+                                           Strategy.Type.WebsocketChange.value]:
             self.manage_recent_candle_strategy()
         else:
             raise NotImplementedError
@@ -314,9 +328,9 @@ class Position(BaseModel):
         data = position_details['result']['list'][0]
         self.amount = Decimal(data['size']) if data['size'] != '0' else self.amount
         self.value = Decimal(data['positionValue']) if data['positionValue'] not in ['0', ''] else self.value
-        self.unrealized_usdt_pnl = Decimal(data['curRealisedPnl']) if data['curRealisedPnl'] != '0' else (
+        self.unrealized_usdt_pnl = Decimal(data['curRealisedPnl']) if data['curRealisedPnl'] not in ['0', ''] else (
             self.unrealized_usdt_pnl)
-        self.average_entry_price = Decimal(data['avgPrice']) if data['avgPrice'] != '0' else self.average_entry_price
+        self.average_entry_price = Decimal(data['avgPrice']) if data['avgPrice'] not in ['0', ''] else self.average_entry_price
         if data['positionValue'] in ['0', '']:
             self.status = Position.Status.CLOSED.value
         self.save(update_fields=['amount', 'value', 'status', 'unrealized_usdt_pnl',
@@ -336,6 +350,8 @@ class Position(BaseModel):
             elif best_bid_price <= self.stop_loss_price:
                 self.add_trace("sl reached, close position")
                 self.close_position(side=Order.Side.SELL.value)
+            elif best_bid_price >= self.break_even_price * (1 + 2 * self.market.fee):
+                self.set_stop_loss_to_break_even()
         elif self.side == Position.Side.Short.value:
             best_ask_price = Decimal(str(order_book['result']['a'][0][0]))
             if best_ask_price <= self.take_profit_price:
@@ -344,6 +360,8 @@ class Position(BaseModel):
             elif best_ask_price >= self.stop_loss_price:
                 self.add_trace("sl reached, close position")
                 self.close_position(side=Order.Side.BUY.value)
+            if best_ask_price <= self.break_even_price * (1 - 2 * self.market.fee):
+                self.set_stop_loss_to_break_even()
 
     def close_position(self, side):
         exchange_obj = self.market.get_exchange_object()
@@ -358,7 +376,8 @@ class Position(BaseModel):
             loss_change = (self.strategy.stop_loss / self.strategy.leverage) / 100
             stop_loss_price = price * (1 - loss_change + total_fee)
             self.take_profit_price, self.stop_loss_price = take_profit_price, stop_loss_price
-            self.save(update_fields=['take_profit_price', 'stop_loss_price', 'updated_at'])
+            self.break_even_price = price * (1 + 3 * self.market.fee)
+            self.save(update_fields=['take_profit_price', 'stop_loss_price', 'break_even_price', 'updated_at'])
             return self.take_profit_price, self.stop_loss_price
         elif side == Order.Side.SELL.value:
             profit_change = (self.strategy.take_profit / self.strategy.leverage) / 100
@@ -366,7 +385,8 @@ class Position(BaseModel):
             loss_change = (self.strategy.stop_loss / self.strategy.leverage) / 100
             stop_loss_price = price * (1 + loss_change - total_fee)
             self.take_profit_price, self.stop_loss_price = take_profit_price, stop_loss_price
-            self.save(update_fields=['take_profit_price', 'stop_loss_price', 'updated_at'])
+            self.break_even_price = price * (1 - 3 * self.market.fee)
+            self.save(update_fields=['take_profit_price', 'stop_loss_price', 'break_even_price', 'updated_at'])
             return self.take_profit_price, self.stop_loss_price
         else:
             raise Exception('Invalid side')
@@ -382,8 +402,36 @@ class Position(BaseModel):
 
         return change
 
-    def check_volatility(self, volatility, best_price):
-        change_to_reach_tp = (self.take_profit_price - best_price) / best_price
-        if abs(change_to_reach_tp) > (Decimal('2') * volatility):
-            raise Exception('Volatility too low')
-        self.add_trace(f"volatility: {volatility}, change to reach: {change_to_reach_tp}")
+    def check_volatility(self, volatility):
+        if self.strategy.sensitivity > volatility:
+            raise Position.VolatilityTooLow()
+        self.add_trace(f"volatility: {volatility}, sensitivity: {self.strategy.sensitivity}")
+
+    def set_stop_loss_to_break_even(self):
+        if self.stop_loss_price == self.break_even_price:
+            return
+        self.add_trace("break even reached, set lower stop loss")
+        exchange_obj = self.market.get_exchange_object()
+        if self.side == Position.Side.Long.value:
+            self.take_profit_price = self.take_profit_price + abs(self.take_profit_price - self.break_even_price)
+        else:
+            self.take_profit_price = self.take_profit_price - abs(self.take_profit_price - self.break_even_price)
+        exchange_obj.set_sl_tp(symbol=self.symbol, sl_price=self.break_even_price, tp_price=self.take_profit_price)
+        self.stop_loss_price = self.break_even_price
+        self.save(update_fields=['stop_loss_price', 'take_profit_price', 'updated_at'])
+
+    def open_position_based_on_websocket_change(self):
+        price = get_price(symbol=self.symbol)
+        print("price", price)
+        balance = get_balance(symbol=self.market.second_currency.symbol, exchange=self.market.exchange)
+        print("balance", balance)
+        value_to_open = Decimal(str(balance)) * self.strategy.leverage
+        print("value_to_open: ", value_to_open)
+        amount_to_open = (value_to_open / price) * Decimal('0.9')
+        print('amount_to_open: ', amount_to_open)
+        if self.side == Position.Side.Long.value:
+            self.calculate_sl_tp(price=price, side=Order.Side.BUY.value)
+            self.open_long_position(amount=amount_to_open)
+        elif self.side == Position.Side.Short.value:
+            self.calculate_sl_tp(price=price, side=Order.Side.SELL.value)
+            self.open_short_position(amount=amount_to_open)
