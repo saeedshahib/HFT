@@ -21,14 +21,20 @@ def get_last(symbol):
 
 
 def get_change_percent(symbol):
-    first_price = Decimal(str(json.loads(get_first(symbol))['price']))
-    last_price = Decimal(str(json.loads(get_last(symbol))['price']))
+    first_price = Decimal(str(json.loads(get_first(symbol))['ask_price']))
+    last_price = Decimal(str(json.loads(get_last(symbol))['ask_price']))
     change_percent = (last_price - first_price) / first_price * 100
     return change_percent
 
 
-def get_price(symbol):
-    return Decimal(str(json.loads(get_last(symbol))['price']))
+def get_price(symbol, side):
+    from trading.models import Position
+    if side == Position.Side.Long.value:
+        return Decimal(str(json.loads(get_last(symbol))['bid_price']))
+    elif side == Position.Side.Short.value:
+        return Decimal(str(json.loads(get_first(symbol))['ask_price']))
+    else:
+        raise Exception('Invalid side')
 
 
 def get_balance(symbol, exchange):

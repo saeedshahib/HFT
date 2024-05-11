@@ -421,17 +421,19 @@ class Position(BaseModel):
         self.save(update_fields=['stop_loss_price', 'take_profit_price', 'updated_at'])
 
     def open_position_based_on_websocket_change(self):
-        price = get_price(symbol=self.symbol)
-        print("price", price)
         balance = get_balance(symbol=self.market.second_currency.symbol, exchange=self.market.exchange)
         print("balance", balance)
         value_to_open = Decimal(str(balance)) * self.strategy.leverage
         print("value_to_open: ", value_to_open)
-        amount_to_open = (value_to_open / price) * Decimal('0.9')
-        print('amount_to_open: ', amount_to_open)
         if self.side == Position.Side.Long.value:
+            price = get_price(symbol=self.symbol, side=Position.Side.Long.value)
+            print("price long: ", price)
+            amount_to_open = (value_to_open / price) * Decimal('0.9')
             self.calculate_sl_tp(price=price, side=Order.Side.BUY.value)
             self.open_long_position(amount=amount_to_open)
         elif self.side == Position.Side.Short.value:
+            price = get_price(symbol=self.symbol, side=Position.Side.Short.value)
+            print("price short: ", price)
+            amount_to_open = (value_to_open / price) * Decimal('0.9')
             self.calculate_sl_tp(price=price, side=Order.Side.SELL.value)
             self.open_short_position(amount=amount_to_open)
