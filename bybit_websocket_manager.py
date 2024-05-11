@@ -21,6 +21,7 @@ sensitivities = dict(Strategy.objects.filter(active=True).values_list('market__s
 
 
 def add_ticker(symbol, data, timestamp):
+    # TODO add check for recent candles before opening position
     name = get_queue_name(symbol)
     global_redis_instance.zadd(name, {f'{{"ask_price": {data['ask_price']}, "bid_price": {data['bid_price']}, '
                                       f'"timestamp": {timestamp}}}': timestamp})
