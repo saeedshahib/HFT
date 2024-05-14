@@ -20,8 +20,8 @@ class Bybit(APIManagerInterface):
 
     def get_recent_candle(self, symbol):
         now = int(time.time())
-        start = now - 120
-        return self.session.get_kline(category='linear', symbol=symbol, interval='1',
+        start = now - 3600 * 24 * 7
+        return self.session.get_kline(category='linear', symbol=symbol, interval='15',
                                       start=start*1000)['result']['list']
 
     def get_balance(self, currency):
