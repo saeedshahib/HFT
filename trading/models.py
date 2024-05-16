@@ -95,7 +95,7 @@ class Order(BaseModel):
         exchange_obj = self.market.get_exchange_object()
         response = exchange_obj.place_market_order(symbol=self.symbol,
                                                    amount=self.amount,
-                                                   side=self.side, unique_id=self.id,
+                                                   side=self.side, unique_id=f'test2_{self.id}',
                                                    order_type=self.order_type,
                                                    take_profit=self.take_profit_price,
                                                    stop_loss=self.stop_loss_price)

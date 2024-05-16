@@ -41,7 +41,16 @@ def generate_signals(df, short_ema_window, bb_window, bb_std, ao_short_window, a
     df['Bollinger Upper Band'] = bollinger['Upper Band']
     df['Bollinger Lower Band'] = bollinger['Lower Band']
     df['AO'] = awesome_oscillator(df['High'], df['Low'])
-
+    previous_row = None
+    for index, row in df.iterrows():
+        if previous_row is not None:
+            if (row['3 EMA'] > row['Bollinger Middle Band'] and previous_row['3 EMA'] <
+                    previous_row['Bollinger Middle Band'] and row['AO'] > previous_row['AO']):
+                print("buy", row['ts'])
+            if (row['3 EMA'] < row['Bollinger Middle Band'] and previous_row['3 EMA'] >
+                    previous_row['Bollinger Middle Band'] and row['AO'] < previous_row['AO']):
+                print("sell", row['ts'])
+        previous_row = row
     signals = pd.DataFrame(index=df.index)
     signals['Buy'] = (df['3 EMA'] > df['Bollinger Middle Band']) & (df['AO'] > 0)
     signals['Sell'] = (df['3 EMA'] < df['Bollinger Middle Band']) & (df['AO'] < 0)
@@ -82,15 +91,18 @@ recent_candles = bybit.get_recent_candle(symbol="TRBUSDT")
 high = []
 low = []
 close = []
-for candle in recent_candles:
+ts = []
+for candle in reversed(recent_candles):
     close.append(float(candle[4]))
     high.append(float(candle[2]))
     low.append(float(candle[3]))
+    ts.append(str(candle[0]))
 
 data = {
     'Close': close,
     'High': high,
-    'Low': low
+    'Low': low,
+    'ts': ts
 }
 index = pd.date_range(start='2024-01-01 03:00', periods=len(close), freq='h')
 df = pd.DataFrame(data, index=index)
@@ -112,29 +124,29 @@ sell_signals = signals[signals['Sell'] == True]
 # signals_with_tp = apply_take_profit(df, signals)
 # print(signals_with_tp)
 
-# Plot Closing Prices, Bollinger Bands, and EMA
-fig, axs = plt.subplots(3, figsize=(15, 12))
-axs[0].plot(df.index, df['Close'], label='Close Price')
-axs[0].plot(df.index, df['3 EMA'], label='3 EMA', linestyle='--')
-axs[0].plot(df.index, df['Bollinger Middle Band'], label='Bollinger Middle Band', linestyle='--')
-axs[0].fill_between(df.index, df['Bollinger Upper Band'], df['Bollinger Lower Band'], color='gray', alpha=0.3)
-axs[0].scatter(buy_signals.index, df.loc[buy_signals.index]['Close'], marker='^', color='g', label='Buy Signal', s=100)
-axs[0].scatter(sell_signals.index, df.loc[sell_signals.index]['Close'], marker='v', color='r', label='Sell Signal', s=100)
-axs[0].set_title('Closing Prices, Bollinger Bands, and EMA')
-axs[0].legend()
-
-# Plot Awesome Oscillator
-axs[1].bar(df.index, df['AO'], label='Awesome Oscillator', color=(df['AO'] > 0).map({True: 'g', False: 'r'}))
-axs[1].axhline(0, color='black', linewidth=0.5)
-axs[1].set_title('Awesome Oscillator')
-axs[1].legend()
-
-# Plot Buy and Sell signals
-axs[2].plot(df.index, df['Close'], label='Close Price')
-axs[2].scatter(buy_signals.index, df.loc[buy_signals.index]['Close'], marker='^', color='g', label='Buy Signal', s=100)
-axs[2].scatter(sell_signals.index, df.loc[sell_signals.index]['Close'], marker='v', color='r', label='Sell Signal', s=100)
-axs[2].set_title('Buy and Sell Signals')
-axs[2].legend()
-
-plt.tight_layout()
-plt.show()
+# # Plot Closing Prices, Bollinger Bands, and EMA
+# fig, axs = plt.subplots(3, figsize=(15, 12))
+# axs[0].plot(df.index, df['Close'], label='Close Price')
+# axs[0].plot(df.index, df['3 EMA'], label='3 EMA', linestyle='--')
+# axs[0].plot(df.index, df['Bollinger Middle Band'], label='Bollinger Middle Band', linestyle='--')
+# axs[0].fill_between(df.index, df['Bollinger Upper Band'], df['Bollinger Lower Band'], color='gray', alpha=0.3)
+# axs[0].scatter(buy_signals.index, df.loc[buy_signals.index]['Close'], marker='^', color='g', label='Buy Signal', s=100)
+# axs[0].scatter(sell_signals.index, df.loc[sell_signals.index]['Close'], marker='v', color='r', label='Sell Signal', s=100)
+# axs[0].set_title('Closing Prices, Bollinger Bands, and EMA')
+# axs[0].legend()
+#
+# # Plot Awesome Oscillator
+# axs[1].bar(df.index, df['AO'], label='Awesome Oscillator', color=(df['AO'] > 0).map({True: 'g', False: 'r'}))
+# axs[1].axhline(0, color='black', linewidth=0.5)
+# axs[1].set_title('Awesome Oscillator')
+# axs[1].legend()
+#
+# # Plot Buy and Sell signals
+# axs[2].plot(df.index, df['Close'], label='Close Price')
+# axs[2].scatter(buy_signals.index, df.loc[buy_signals.index]['Close'], marker='^', color='g', label='Buy Signal', s=100)
+# axs[2].scatter(sell_signals.index, df.loc[sell_signals.index]['Close'], marker='v', color='r', label='Sell Signal', s=100)
+# axs[2].set_title('Buy and Sell Signals')
+# axs[2].legend()
+#
+# plt.tight_layout()
+# plt.show()
