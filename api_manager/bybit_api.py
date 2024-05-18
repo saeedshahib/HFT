@@ -18,11 +18,9 @@ class Bybit(APIManagerInterface):
             demo=demo
         )
 
-    def get_recent_candle(self, symbol):
-        now = int(time.time())
-        start = now - 1000 * 60
+    def get_recent_candle(self, symbol, start=None, end=None):
         return self.session.get_kline(category='linear', symbol=symbol, interval='1',
-                                      start=start*1000, limit=1000)['result']['list']
+                                      start=start*1000, end=end*1000, limit=1000)['result']['list']
 
     def get_balance(self, currency):
         return self.session.get_coin_balance(accountType='UNIFIED', coin=currency)['result']['balance']['walletBalance']
