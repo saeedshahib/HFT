@@ -1,6 +1,9 @@
 import os
+import time
+
 import django
 from decimal import Decimal
+from datetime import datetime
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'djangoProject.settings')
 django.setup()
@@ -28,9 +31,9 @@ def bollinger_bands(data, window, no_of_std):
     return bands
 
 
-def awesome_oscillator(high, low):
+def awesome_oscillator(high, low, short_window, long_window):
     median_price = (high + low) / 2
-    ao = median_price.rolling(window=5).mean() - median_price.rolling(window=34).mean()
+    ao = median_price.rolling(window=short_window).mean() - median_price.rolling(window=long_window).mean()
     return ao
 
 
@@ -40,17 +43,36 @@ def generate_signals(df, short_ema_window, bb_window, bb_std, ao_short_window, a
     df['Bollinger Middle Band'] = bollinger['Middle Band']
     df['Bollinger Upper Band'] = bollinger['Upper Band']
     df['Bollinger Lower Band'] = bollinger['Lower Band']
-    df['AO'] = awesome_oscillator(df['High'], df['Low'])
+    df['AO'] = awesome_oscillator(df['High'], df['Low'], ao_short_window, ao_long_window)
     previous_row = None
+    position = None
+    side = None
+    sum_pnl = 0
+    tp_count = 0
+    sl_count = 0
     for index, row in df.iterrows():
         if previous_row is not None:
-            if (row['3 EMA'] > row['Bollinger Middle Band'] and previous_row['3 EMA'] <
-                    previous_row['Bollinger Middle Band'] and row['AO'] > previous_row['AO']):
-                print("buy", row['ts'])
-            if (row['3 EMA'] < row['Bollinger Middle Band'] and previous_row['3 EMA'] >
-                    previous_row['Bollinger Middle Band'] and row['AO'] < previous_row['AO']):
-                print("sell", row['ts'])
+            if position is None:
+                if (row['3 EMA'] > row['Bollinger Middle Band'] and previous_row['3 EMA'] <
+                        previous_row['Bollinger Middle Band'] and row['AO'] > previous_row['AO']):
+                    # print("buy", row['date'])
+                    position = row
+                    side = "Long"
+                if (row['3 EMA'] < row['Bollinger Middle Band'] and previous_row['3 EMA'] >
+                        previous_row['Bollinger Middle Band'] and row['AO'] < previous_row['AO']):
+                    # print("sell", row['date'])
+                    position = row
+                    side = "Short"
+            else:
+                open = Decimal(str(position['Bollinger Middle Band']))
+                # position, sl_count, sum_pnl, tp_count = check_tp_sl_fixed(open, position, row, side, sl_count, sum_pnl,
+                #                                                           tp_count)
+                position, sl_count, sum_pnl, tp_count = check_tp_sl_bollinger(open, position, row, side, sl_count,
+                                                                              sum_pnl, tp_count)
         previous_row = row
+    print(sum_pnl)
+    print(tp_count)
+    print(sl_count)
     signals = pd.DataFrame(index=df.index)
     signals['Buy'] = (df['3 EMA'] > df['Bollinger Middle Band']) & (df['AO'] > 0)
     signals['Sell'] = (df['3 EMA'] < df['Bollinger Middle Band']) & (df['AO'] < 0)
@@ -61,6 +83,60 @@ def generate_signals(df, short_ema_window, bb_window, bb_std, ao_short_window, a
     # signals['Sell'] = signals['Sell'] & trading_hours
 
     return signals
+
+
+def check_tp_sl_fixed(open, position, row, side, sl_count, sum_pnl, tp_count):
+    if side == "Long":
+        if row['High'] >= open * Decimal('1.02'):
+            print("tp reached long")
+            tp_count += 1
+            sum_pnl += ((row['High'] - open) / open * 100) - Decimal('0.2')
+            position = None
+        elif row['Low'] <= open * Decimal('0.99'):
+            print("sl reached long")
+            sl_count += 1
+            sum_pnl += ((row['Low'] - open) / open * 100) - Decimal('0.2')
+            position = None
+        print(sum_pnl)
+    else:
+        if row['Low'] <= open * Decimal('0.98'):
+            print("tp reached short")
+            tp_count += 1
+            sum_pnl += abs((row['Low'] - open) / open * 100) - Decimal('0.2')
+            position = None
+        elif row['High'] >= open * Decimal('1.01'):
+            print("sl reached short")
+            sl_count += 1
+            sum_pnl += ((row['High'] - open) / open * 100) - Decimal('0.2')
+            position = None
+        print(sum_pnl)
+    return position, sl_count, sum_pnl, tp_count
+
+
+def check_tp_sl_bollinger(open, position, row, side, sl_count, sum_pnl, tp_count):
+    if side == "Long":
+        if row['High'] >= position['Bollinger Upper Band']:
+            print("tp reached long")
+            tp_count += 1
+            sum_pnl += ((row['High'] - open) / open * 100) - Decimal('0.2')
+            position = None
+        elif row['Low'] <= open * Decimal('0.98'):
+            print("sl reached long")
+            sl_count += 1
+            sum_pnl += ((row['Low'] - open) / open * 100) - Decimal('0.2')
+            position = None
+    else:
+        if row['Low'] <= position['Bollinger Lower Band']:
+            print("tp reached short")
+            tp_count += 1
+            sum_pnl += abs((row['Low'] - open) / open * 100) - Decimal('0.2')
+            position = None
+        elif row['High'] >= open * Decimal('1.02'):
+            print("sl reached short")
+            sl_count += 1
+            sum_pnl += ((row['High'] - open) / open * 100) - Decimal('0.2')
+            position = None
+    return position, sl_count, sum_pnl, tp_count
 
 
 def check_trending_market(df, threshold=0.005):
@@ -92,17 +168,20 @@ high = []
 low = []
 close = []
 ts = []
+date = []
 for candle in reversed(recent_candles):
-    close.append(float(candle[4]))
-    high.append(float(candle[2]))
-    low.append(float(candle[3]))
+    close.append(Decimal(str((candle[4]))))
+    high.append(Decimal(str((candle[2]))))
+    low.append(Decimal(str((candle[3]))))
     ts.append(str(candle[0]))
+    date.append(datetime.fromtimestamp(int(candle[0]) // 1000))
 
 data = {
     'Close': close,
     'High': high,
     'Low': low,
-    'ts': ts
+    'ts': ts,
+    'date': date
 }
 index = pd.date_range(start='2024-01-01 03:00', periods=len(close), freq='h')
 df = pd.DataFrame(data, index=index)
