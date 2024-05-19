@@ -27,21 +27,21 @@ def add_ticker(symbol, data, timestamp):
                                       f'"timestamp": {timestamp}}}': timestamp})
     cutoff = timestamp - TIME_WINDOW * 1000
     global_redis_instance.zremrangebyscore(name, '-inf', cutoff)
-    change_percent = get_change_percent(symbol=symbol)
-    if abs(change_percent) > Decimal(sensitivities[symbol]):
-        print(change_percent)
-        strategy = Strategy.objects.get(market__symbol=symbol, active=True,
-                                        strategy_type=Strategy.Type.WebsocketChange.value)
-        if Position.objects.filter(strategy=strategy, status__in=[Position.Status.OPEN.value,
-                                                                  Position.Status.Initiated.value]).exists():
-            return
-        if abs(change_percent) < strategy.sensitivity:
-            return
-        if change_percent > 0 and data['direction'] in ['PlusTick', 'ZeroPlusTick']:
-            Position.objects.create(strategy=strategy, side=Position.Side.Long.value)
-        elif change_percent < 0 and data['direction'] in ['MinusTick', 'ZeroMinusTick']:
-            Position.objects.create(strategy=strategy, side=Position.Side.Short.value)
-        print(change_percent, symbol, timestamp)
+    # change_percent = get_change_percent(symbol=symbol)
+    # if abs(change_percent) > Decimal(sensitivities[symbol]):
+    #     print(change_percent)
+    #     strategy = Strategy.objects.get(market__symbol=symbol, active=True,
+    #                                     strategy_type=Strategy.Type.WebsocketChange.value)
+    #     if Position.objects.filter(strategy=strategy, status__in=[Position.Status.OPEN.value,
+    #                                                               Position.Status.Initiated.value]).exists():
+    #         return
+    #     if abs(change_percent) < strategy.sensitivity:
+    #         return
+    #     if change_percent > 0 and data['direction'] in ['PlusTick', 'ZeroPlusTick']:
+    #         Position.objects.create(strategy=strategy, side=Position.Side.Long.value)
+    #     elif change_percent < 0 and data['direction'] in ['MinusTick', 'ZeroMinusTick']:
+    #         Position.objects.create(strategy=strategy, side=Position.Side.Short.value)
+    #     print(change_percent, symbol, timestamp)
 
 
 def handle_message(message):

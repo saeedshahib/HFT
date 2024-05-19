@@ -1,5 +1,6 @@
 import time
 import traceback
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 
 from django.db import models
@@ -9,6 +10,8 @@ from utils.bases import *
 from api_manager.bybit_api import Bybit
 from api_manager.mexc_api import MEXC
 from utils.redis import *
+
+from .indicator_manager import strategy_manager
 # Create your models here.
 
 
@@ -125,6 +128,7 @@ class Strategy(BaseModel):
     class Type(models.TextChoices):
         RecentCandle = "Recent Candle"
         WebsocketChange = "Websocket Change"
+        BollingerAwesome = "Bollinger Awesome"
 
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
     strategy_type = models.CharField(max_length=50, choices=Type.choices)
@@ -186,21 +190,49 @@ class Position(BaseModel):
                         initiated_position.check_and_open()
                     else:
                         Position.objects.create(strategy=strategy)
-                else:
-                    continue
+                elif strategy.strategy_type == Strategy.Type.BollingerAwesome.value:
+                    return Position.check_and_open_position_based_on_bollinger_awesome()
             except Position.VolatilityTooLow:
                 continue
             except Exception as e:
                 print(e)
 
     @staticmethod
-    def check_open_positions():
+    def check_open_positions(last_three_candles):
         positions = Position.objects.filter(status=Position.Status.OPEN.value)
         for position in positions:
             try:
-                position.check_and_manage_position()
+                position.check_and_manage_position(last_three_candles)
             except Exception as ve:
                 print(traceback.format_exc())
+
+    @staticmethod
+    def check_and_open_position_based_on_bollinger_awesome():
+        strategy: Strategy = Strategy.objects.filter(active=True,
+                                                     strategy_type=Strategy.Type.BollingerAwesome.value).last()
+        batch_period = 100 * 60
+        # end_time = (datetime.now(tz=timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=1)).timestamp()
+        end_time = int(time.time())
+        start_time = end_time - batch_period
+        exchange_obj = strategy.market.get_exchange_object()
+        recent_candles = exchange_obj.get_recent_candle(symbol=strategy.market.symbol, start=start_time, end=end_time)
+        df, strategy = strategy_manager.check_active_strategy_and_generate_df(strategy=strategy,
+                                                                              recent_candles=recent_candles)
+        last_three_candles = df.tail(3)
+        previous_row = last_three_candles.iloc[0]
+        current_row = last_three_candles.iloc[1]
+        if Position.objects.filter(strategy=strategy, status__in=[Position.Status.OPEN.value,
+                                                                  Position.Status.Initiated.value]).exists():
+            return last_three_candles
+        if (current_row['3 EMA'] > current_row['Bollinger Middle Band'] and previous_row['3 EMA'] <
+                previous_row['Bollinger Middle Band'] and current_row['AO'] > previous_row['AO']):
+            print(last_three_candles)
+            Position.objects.create(strategy=strategy, side=Position.Side.Long.value)
+        if (current_row['3 EMA'] < current_row['Bollinger Middle Band'] and previous_row['3 EMA'] >
+                previous_row['Bollinger Middle Band'] and current_row['AO'] < previous_row['AO']):
+            print(last_three_candles)
+            Position.objects.create(strategy=strategy, side=Position.Side.Short.value)
+        return last_three_candles
 
     def save(self, *args, **kwargs):
         if not self.pk:
@@ -215,6 +247,8 @@ class Position(BaseModel):
         if self.strategy.strategy_type == Strategy.Type.RecentCandle.value:
             self.check_and_open_position_based_on_recent_candle()
         elif self.strategy.strategy_type == Strategy.Type.WebsocketChange.value:
+            self.open_position_based_on_websocket_change()
+        elif self.strategy.strategy_type == Strategy.Type.BollingerAwesome.value:
             self.open_position_based_on_websocket_change()
 
     def check_and_open_position_based_on_recent_candle(self):
@@ -243,12 +277,12 @@ class Position(BaseModel):
         else:
             return
 
-    def check_and_manage_position(self):
+    def check_and_manage_position(self, last_three_candles):
         if self.strategy.strategy_type in [Strategy.Type.RecentCandle.value,
                                            Strategy.Type.WebsocketChange.value]:
             self.manage_recent_candle_strategy()
-        else:
-            raise NotImplementedError
+        elif self.strategy.strategy_type == Strategy.Type.BollingerAwesome.value:
+            self.manage_bollinger_awesome_strategy(last_three_candles)
 
     def manage_recent_candle_strategy(self):
         if self.status == Position.Status.OPEN.value:
@@ -437,3 +471,27 @@ class Position(BaseModel):
             amount_to_open = (value_to_open / price) * Decimal('0.9')
             self.calculate_sl_tp(price=price, side=Order.Side.SELL.value)
             self.open_short_position(amount=amount_to_open)
+
+    def manage_bollinger_awesome_strategy(self, last_three_candles):
+        if self.status == Position.Status.OPEN.value:
+            self.update_status()
+            print("check tp sl")
+            current_candle = last_three_candles.iloc[-1]
+            if self.side == Position.Side.Long.value:
+                current_price = get_price(symbol=self.symbol, side=Position.Side.Long.value)
+                if Decimal(str(current_price)) >= Decimal(str(current_candle['Bollinger Upper Band'])):
+                    self.add_trace("tp reached, close position")
+                    self.close_position(side=Order.Side.SELL.value)
+                elif current_price <= self.stop_loss_price:
+                    self.add_trace("sl reached, close position")
+                    self.close_position(side=Order.Side.SELL.value)
+            elif self.side == Position.Side.Short.value:
+                current_price = get_price(symbol=self.symbol, side=Position.Side.Long.value)
+                if Decimal(str(current_price)) <= Decimal(str(current_candle['Bollinger Lower Band'])):
+                    self.add_trace("tp reached, close position")
+                    self.close_position(side=Order.Side.BUY.value)
+                elif current_price >= self.stop_loss_price:
+                    self.add_trace("sl reached, close position")
+                    self.close_position(side=Order.Side.BUY.value)
+        else:
+            raise Exception("Position is not Open")
