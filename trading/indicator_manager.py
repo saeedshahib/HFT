@@ -5,11 +5,14 @@ import pandas as pd
 
 class StrategyManager:
     def __init__(self):
-        self.short_ema_window = 3
-        self.bb_window = 20
+        self.short_ema_window = 5
+        self.bb_window = 30
         self.bb_std = 3
         self.ao_short_window = 5
         self.ao_long_window = 34
+        self.pnl = 0
+        self.tp_count = 0
+        self.sl_count = 0
 
     def generate_df(self, recent_candles):
         high = []
@@ -84,13 +87,11 @@ class StrategyManager:
         for index, row in df.iterrows():
             if previous_row is not None:
                 if position is None:
-                    if (row['3 EMA'] > row['Bollinger Middle Band'] and previous_row['3 EMA'] <
-                            previous_row['Bollinger Middle Band'] and row['AO'] > previous_row['AO']):
+                    if self.check_open_long(df, row, previous_row):
                         # print("buy", row['date'])
                         position = row
                         side = "Long"
-                    if (row['3 EMA'] < row['Bollinger Middle Band'] and previous_row['3 EMA'] >
-                            previous_row['Bollinger Middle Band'] and row['AO'] < previous_row['AO']):
+                    elif self.check_open_short(df, row, previous_row):
                         # print("sell", row['date'])
                         position = row
                         side = "Short"
@@ -98,12 +99,15 @@ class StrategyManager:
                     open = Decimal(str(position['Close']))
                     # position, sl_count, sum_pnl, tp_count = check_tp_sl_fixed(open, position, row, side, sl_count, sum_pnl,
                     #                                                           tp_count)
-                    position, sl_count, sum_pnl, tp_count = self.check_tp_sl_bollinger(open, position, row, side,
+                    position, sl_count, sum_pnl, tp_count = self.check_tp_sl_fixed(open, position, row, side,
                                                                                        sl_count, sum_pnl, tp_count)
             previous_row = row
         print(tp_count)
         print(sl_count)
         print(sum_pnl)
+        self.pnl += sum_pnl
+        self.tp_count += tp_count
+        self.sl_count += sl_count
         signals = pd.DataFrame(index=df.index)
         signals['Buy'] = (df['3 EMA'] > df['Bollinger Middle Band']) & (df['AO'] > 0)
         signals['Sell'] = (df['3 EMA'] < df['Bollinger Middle Band']) & (df['AO'] < 0)
@@ -114,6 +118,20 @@ class StrategyManager:
         # signals['Sell'] = signals['Sell'] & trading_hours
 
         return signals
+
+    def check_open_long(self, df, current_row, previous_row):
+        if (current_row['3 EMA'] > current_row['Bollinger Middle Band'] and previous_row['3 EMA'] <
+                previous_row['Bollinger Middle Band'] and current_row['AO'] > previous_row['AO']):
+            if self.check_trending_market(df=df)[0]:
+                return True
+        return False
+
+    def check_open_short(self, df, current_row, previous_row):
+        if (current_row['3 EMA'] < current_row['Bollinger Middle Band'] and previous_row['3 EMA'] >
+                previous_row['Bollinger Middle Band'] and current_row['AO'] < previous_row['AO']):
+            if self.check_trending_market(df=df)[1]:
+                return True
+        return False
 
     def check_active_strategy_and_generate_df(self, strategy, recent_candles):
         df = self.generate_df(recent_candles)
@@ -128,59 +146,163 @@ class StrategyManager:
     def check_tp_sl_fixed(self, open, position, row, side, sl_count, sum_pnl, tp_count):
         if side == "Long":
             if row['High'] >= open * Decimal('1.02'):
-                print("tp reached long")
+                # print("tp reached long")
+                # print(position)
                 tp_count += 1
-                sum_pnl += ((row['High'] - open) / open * 100) - Decimal('0.3')
+                tp = Decimal('1.8')
+                sum_pnl += tp
                 position = None
-            elif row['Low'] <= open * Decimal('0.99'):
-                print("sl reached long")
+            elif row['Low'] <= open * Decimal('0.98'):
+                # print("sl reached long")
+                # print(position)
+                # print(row)
                 sl_count += 1
-                sum_pnl += ((row['Low'] - open) / open * 100) - Decimal('0.3')
+                sl = Decimal('-2.2')
+                sum_pnl += sl
                 position = None
-            print(sum_pnl)
+            # print(sum_pnl)
         else:
             if row['Low'] <= open * Decimal('0.98'):
-                print("tp reached short")
+                # print("tp reached short")
+                # print(position)
                 tp_count += 1
-                sum_pnl += abs((row['Low'] - open) / open * 100) - Decimal('0.3')
+                tp = Decimal('1.8')
+                sum_pnl += tp
                 position = None
-            elif row['High'] >= open * Decimal('1.01'):
-                print("sl reached short")
+            elif row['High'] >= open * Decimal('1.02'):
+                # print("sl reached short")
+                # print(position)
+                # print(row)
                 sl_count += 1
-                sum_pnl += ((row['High'] - open) / open * 100) - Decimal('0.3')
+                sl = Decimal('-2.2')
+                sum_pnl += sl
                 position = None
-            print(sum_pnl)
+            # print(sum_pnl)
         return position, sl_count, sum_pnl, tp_count
 
     def check_tp_sl_bollinger(self, open, position, row, side, sl_count, sum_pnl, tp_count):
         if side == "Long":
-            if row['High'] >= position['Bollinger Upper Band']:
+            if Decimal(str(row['High'])) >= Decimal(str(position['Bollinger Upper Band'])):
                 # print("tp reached long")
                 tp_count += 1
-                sum_pnl += ((row['High'] - open) / open * 100) - Decimal('0.3')
+                profit = ((row['High'] - open) / open * 100) - Decimal('0.2')
+                # print("profit long: ", profit)
+                sum_pnl += profit
                 position = None
-            elif row['Low'] <= open * Decimal('0.98'):
+            elif Decimal(str(row['Low'])) <= open * Decimal('0.98'):
                 # print("sl reached long")
                 sl_count += 1
-                sum_pnl += ((row['Low'] - open) / open * 100) - Decimal('0.3')
+                loss = ((row['Low'] - open) / open * 100) - Decimal('0.2')
+                # print("loss long: ", loss)
+                sum_pnl += loss
                 position = None
         else:
-            if row['Low'] <= position['Bollinger Lower Band']:
+            if Decimal(str(row['Low'])) <= Decimal(str(position['Bollinger Lower Band'])):
                 # print("tp reached short")
                 tp_count += 1
-                sum_pnl += abs((row['Low'] - open) / open * 100) - Decimal('0.3')
+                profit = ((open - (row['Low'])) / open * 100) - Decimal('0.2')
+                # print("profit short: ", profit)
+                sum_pnl += profit
                 position = None
-            elif row['High'] >= open * Decimal('1.02'):
+            elif Decimal(str(row['High'])) >= open * Decimal('1.02'):
                 # print("sl reached short")
                 sl_count += 1
-                sum_pnl += ((row['High'] - open) / open * 100) - Decimal('0.3')
+                loss = ((open - (row['High'])) / open * 100) - Decimal('0.2')
+                # print("loss short: ", loss)
+                sum_pnl += loss
                 position = None
         return position, sl_count, sum_pnl, tp_count
 
-    def check_trending_market(self, df, threshold=0.005):
-        price_diff = df['Close'].pct_change()
-        volatility = price_diff.rolling(window=20).std()
-        trending = volatility > threshold
-        return trending
+    def check_trending_market(self, df, short_window=20, long_window=50, threshold=0.5):
+        """
+            Checks whether the market is trending based on moving averages.
+
+            Parameters:
+            df (pd.DataFrame): DataFrame containing market data with at least a 'Close' column.
+            short_window (int): The window size for the short-term moving average.
+            long_window (int): The window size for the long-term moving average.
+            threshold (float): The threshold proportion of days the short-term MA must be above/below the long-term MA to be considered trending.
+
+            Returns:
+            bool: True if the market is trending, False otherwise.
+            """
+        if 'Close' not in df.columns:
+            raise ValueError("DataFrame must contain a 'Close' column")
+
+        df['Short_MA'] = df['Close'].rolling(window=short_window).mean()
+        df['Long_MA'] = df['Close'].rolling(window=long_window).mean()
+
+        df = df.dropna()  # Drop rows with NaN values due to rolling window
+
+        trending_up = (df['Short_MA'] > df['Long_MA']).sum() / len(df) > threshold
+        trending_down = (df['Short_MA'] < df['Long_MA']).sum() / len(df) > threshold
+
+        return trending_up, trending_down
+
+    def ichimoku_cloud(self, data, period1=9, period2=26, period3=52):
+        """
+        Calculate Ichimoku Cloud indicators and determine the trend.
+
+        :param data: DataFrame with columns ['High', 'Low', 'Close']
+        :param period1: Period for Tenkan-sen (default is 9)
+        :param period2: Period for Kijun-sen (default is 26)
+        :param period3: Period for Senkou Span B (default is 52)
+        :return: DataFrame with Ichimoku Cloud components and trend indication
+        """
+
+        # Calculate the Tenkan-sen (Conversion Line)
+        high_9 = data['High'].rolling(window=period1).max()
+        low_9 = data['Low'].rolling(window=period1).min()
+        tenkan_sen = (high_9 + low_9) / 2
+
+        # Calculate the Kijun-sen (Base Line)
+        high_26 = data['High'].rolling(window=period2).max()
+        low_26 = data['Low'].rolling(window=period2).min()
+        kijun_sen = (high_26 + low_26) / 2
+
+        # Calculate the Senkou Span A (Leading Span A)
+        senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(period2)
+
+        # Calculate the Senkou Span B (Leading Span B)
+        high_52 = data['High'].rolling(window=period3).max()
+        low_52 = data['Low'].rolling(window=period3).min()
+        senkou_span_b = ((high_52 + low_52) / 2).shift(period2)
+
+        # Calculate the Chikou Span (Lagging Span)
+        chikou_span = data['Close'].shift(-period2)
+
+        # Determine the trend
+        trend = []
+        for i in range(len(data)):
+            if str(senkou_span_a.iloc[i]) == 'nan':
+                continue
+            if str(senkou_span_b.iloc[i]) == 'nan':
+                continue
+            if data['Close'].iloc[i] > senkou_span_a.iloc[i] and data['Close'].iloc[i] > senkou_span_b.iloc[i]:
+                if tenkan_sen.iloc[i] > kijun_sen.iloc[i] and tenkan_sen.iloc[i] > senkou_span_a.iloc[i] and tenkan_sen.iloc[i] > senkou_span_b.iloc[i]:
+                    trend.append('Uptrend')
+                else:
+                    trend.append('Consolidation/Neutral')
+            elif data['Close'].iloc[i] < senkou_span_a.iloc[i] and data['Close'].iloc[i] < senkou_span_b.iloc[i]:
+                if tenkan_sen.iloc[i] < kijun_sen.iloc[i] and tenkan_sen.iloc[i] < senkou_span_a.iloc[i] and tenkan_sen.iloc[i] < senkou_span_b.iloc[i]:
+                    trend.append('Downtrend')
+                else:
+                    trend.append('Consolidation/Neutral')
+            else:
+                trend.append('Consolidation/Neutral')
+
+        # Combine all components into a DataFrame
+        # ichimoku_df = pd.DataFrame({
+        #     'Tenkan-sen': tenkan_sen,
+        #     'Kijun-sen': kijun_sen,
+        #     'Senkou Span A': senkou_span_a,
+        #     'Senkou Span B': senkou_span_b,
+        #     'Chikou Span': chikou_span,
+        #     'Close': data['Close'],
+        #     'Trend': trend
+        # })
+
+        return trend[-1] == 'Uptrend', trend[-1] == 'Downtrend'
+
 
 strategy_manager = StrategyManager()

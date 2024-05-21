@@ -33,3 +33,6 @@ def run_backtest():
 
 if __name__ == '__main__':
     run_backtest()
+    print("tp_count: ", strategy_manager.tp_count)
+    print("sl_count: ", strategy_manager.sl_count)
+    print("pnl: ", strategy_manager.pnl)

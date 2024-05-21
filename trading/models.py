@@ -224,12 +224,10 @@ class Position(BaseModel):
         if Position.objects.filter(strategy=strategy, status__in=[Position.Status.OPEN.value,
                                                                   Position.Status.Initiated.value]).exists():
             return last_three_candles
-        if (current_row['3 EMA'] > current_row['Bollinger Middle Band'] and previous_row['3 EMA'] <
-                previous_row['Bollinger Middle Band'] and current_row['AO'] > previous_row['AO']):
+        if strategy_manager.check_open_long(df, current_row, previous_row):
             print(last_three_candles)
             Position.objects.create(strategy=strategy, side=Position.Side.Long.value)
-        if (current_row['3 EMA'] < current_row['Bollinger Middle Band'] and previous_row['3 EMA'] >
-                previous_row['Bollinger Middle Band'] and current_row['AO'] < previous_row['AO']):
+        if strategy_manager.check_open_short(df, current_row, previous_row):
             print(last_three_candles)
             Position.objects.create(strategy=strategy, side=Position.Side.Short.value)
         return last_three_candles
@@ -475,23 +473,26 @@ class Position(BaseModel):
     def manage_bollinger_awesome_strategy(self, last_three_candles):
         if self.status == Position.Status.OPEN.value:
             self.update_status()
-            print("check tp sl")
-            current_candle = last_three_candles.iloc[-1]
-            if self.side == Position.Side.Long.value:
-                current_price = get_price(symbol=self.symbol, side=Position.Side.Long.value)
-                if Decimal(str(current_price)) >= Decimal(str(current_candle['Bollinger Upper Band'])):
-                    self.add_trace("tp reached, close position")
-                    self.close_position(side=Order.Side.SELL.value)
-                elif current_price <= self.stop_loss_price:
-                    self.add_trace("sl reached, close position")
-                    self.close_position(side=Order.Side.SELL.value)
-            elif self.side == Position.Side.Short.value:
-                current_price = get_price(symbol=self.symbol, side=Position.Side.Long.value)
-                if Decimal(str(current_price)) <= Decimal(str(current_candle['Bollinger Lower Band'])):
-                    self.add_trace("tp reached, close position")
-                    self.close_position(side=Order.Side.BUY.value)
-                elif current_price >= self.stop_loss_price:
-                    self.add_trace("sl reached, close position")
-                    self.close_position(side=Order.Side.BUY.value)
+            # current_candle = last_three_candles.iloc[-1]
+            # if self.side == Position.Side.Long.value:
+            #     current_price = get_price(symbol=self.symbol, side=Position.Side.Long.value)
+            #     if ((Decimal(str(current_price)) >=
+            #             Decimal(str(current_candle['Bollinger Upper Band'])) * Decimal('0.999')) and
+            #             Decimal(str(current_price)) >= self.break_even_price):
+            #         self.add_trace("tp reached, close position")
+            #         self.close_position(side=Order.Side.SELL.value)
+            #     elif current_price <= self.stop_loss_price:
+            #         self.add_trace("sl reached, close position")
+            #         self.close_position(side=Order.Side.SELL.value)
+            # elif self.side == Position.Side.Short.value:
+            #     current_price = get_price(symbol=self.symbol, side=Position.Side.Long.value)
+            #     if ((Decimal(str(current_price)) <=
+            #             Decimal(str(current_candle['Bollinger Lower Band'])) * Decimal('1.001')) and
+            #             Decimal(str(current_price)) <= self.break_even_price):
+            #         self.add_trace("tp reached, close position")
+            #         self.close_position(side=Order.Side.BUY.value)
+            #     elif current_price >= self.stop_loss_price:
+            #         self.add_trace("sl reached, close position")
+            #         self.close_position(side=Order.Side.BUY.value)
         else:
             raise Exception("Position is not Open")
