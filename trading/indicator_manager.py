@@ -33,8 +33,8 @@ class StrategyManager:
             'ts': ts,
             'date': date
         }
-        index = pd.date_range(start='2024-01-01 03:00', periods=len(close), freq='h')
-        df = pd.DataFrame(data, index=index)
+        # index = pd.date_range(start='2024-01-01 03:00', periods=len(close), freq='h')
+        df = pd.DataFrame(data)
         return df
 
     def apply_take_profit(self, df, signals, take_profit_pips=10, ao_change_col='AO'):
@@ -85,13 +85,14 @@ class StrategyManager:
         tp_count = 0
         sl_count = 0
         for index, row in df.iterrows():
+            current_df = df.iloc[:index].copy()
             if previous_row is not None:
                 if position is None:
-                    if self.check_open_long(df, row, previous_row):
+                    if self.check_open_long(current_df, row, previous_row):
                         # print("buy", row['date'])
                         position = row
                         side = "Long"
-                    elif self.check_open_short(df, row, previous_row):
+                    elif self.check_open_short(current_df, row, previous_row):
                         # print("sell", row['date'])
                         position = row
                         side = "Short"
@@ -108,16 +109,16 @@ class StrategyManager:
         self.pnl += sum_pnl
         self.tp_count += tp_count
         self.sl_count += sl_count
-        signals = pd.DataFrame(index=df.index)
-        signals['Buy'] = (df['3 EMA'] > df['Bollinger Middle Band']) & (df['AO'] > 0)
-        signals['Sell'] = (df['3 EMA'] < df['Bollinger Middle Band']) & (df['AO'] < 0)
+        # signals = pd.DataFrame(index=df.index)
+        # signals['Buy'] = (df['3 EMA'] > df['Bollinger Middle Band']) & (df['AO'] > 0)
+        # signals['Sell'] = (df['3 EMA'] < df['Bollinger Middle Band']) & (df['AO'] < 0)
 
         # Adding trading hours condition
         # trading_hours = df.index.to_series().between_time('03:00', '12:00')
         # signals['Buy'] = signals['Buy'] & trading_hours
         # signals['Sell'] = signals['Sell'] & trading_hours
 
-        return signals
+        # return signals
 
     def check_open_long(self, df, current_row, previous_row):
         if (current_row['3 EMA'] > current_row['Bollinger Middle Band'] and previous_row['3 EMA'] <
@@ -145,36 +146,36 @@ class StrategyManager:
 
     def check_tp_sl_fixed(self, open, position, row, side, sl_count, sum_pnl, tp_count):
         if side == "Long":
-            if row['High'] >= open * Decimal('1.02'):
+            if row['High'] >= open * Decimal('1.01'):
                 # print("tp reached long")
                 # print(position)
                 tp_count += 1
-                tp = Decimal('1.8')
+                tp = Decimal('0.8')
                 sum_pnl += tp
                 position = None
-            elif row['Low'] <= open * Decimal('0.98'):
+            elif row['Low'] <= open * Decimal('0.99'):
                 # print("sl reached long")
                 # print(position)
                 # print(row)
                 sl_count += 1
-                sl = Decimal('-2.2')
+                sl = Decimal('-1.2')
                 sum_pnl += sl
                 position = None
             # print(sum_pnl)
         else:
-            if row['Low'] <= open * Decimal('0.98'):
+            if row['Low'] <= open * Decimal('0.99'):
                 # print("tp reached short")
                 # print(position)
                 tp_count += 1
-                tp = Decimal('1.8')
+                tp = Decimal('0.8')
                 sum_pnl += tp
                 position = None
-            elif row['High'] >= open * Decimal('1.02'):
+            elif row['High'] >= open * Decimal('1.01'):
                 # print("sl reached short")
                 # print(position)
                 # print(row)
                 sl_count += 1
-                sl = Decimal('-2.2')
+                sl = Decimal('-1.2')
                 sum_pnl += sl
                 position = None
             # print(sum_pnl)
@@ -233,10 +234,8 @@ class StrategyManager:
         df['Long_MA'] = df['Close'].rolling(window=long_window).mean()
 
         df = df.dropna()  # Drop rows with NaN values due to rolling window
-
         trending_up = (df['Short_MA'] > df['Long_MA']).sum() / len(df) > threshold
         trending_down = (df['Short_MA'] < df['Long_MA']).sum() / len(df) > threshold
-
         return trending_up, trending_down
 
     def ichimoku_cloud(self, data, period1=9, period2=26, period3=52):

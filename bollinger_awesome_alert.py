@@ -19,12 +19,12 @@ def run_backtest():
     for i in range(20):
         print(start_time)
         print(end_time)
-        recent_candles = bybit.get_recent_candle(symbol="TRBUSDT", start=start_time, end=end_time)
+        recent_candles = bybit.get_recent_candle(symbol="1000PEPEUSDT", start=start_time, end=end_time)
         df = strategy_manager.generate_df(recent_candles)
 
-        signals = strategy_manager.generate_signals(df)
-        buy_signals = signals[signals['Buy'] == True]
-        sell_signals = signals[signals['Sell'] == True]
+        strategy_manager.generate_signals(df)
+        # buy_signals = signals[signals['Buy'] == True]
+        # sell_signals = signals[signals['Sell'] == True]
 
         start_time = start_time - batch_period
         end_time = end_time - batch_period
