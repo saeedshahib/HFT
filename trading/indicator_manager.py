@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 import pandas as pd
+import numpy as np
 
 
 class StrategyManager:
@@ -24,7 +25,7 @@ class StrategyManager:
             close.append(Decimal(str((candle[4]))))
             high.append(Decimal(str((candle[2]))))
             low.append(Decimal(str((candle[3]))))
-            ts.append(str(candle[0]))
+            ts.append(str(int(candle[0]) // 1000))
             date.append(datetime.fromtimestamp(int(candle[0]) // 1000))
         data = {
             'Close': close,
@@ -303,5 +304,233 @@ class StrategyManager:
 
         return trend[-1] == 'Uptrend', trend[-1] == 'Downtrend'
 
+    def calculate_pivots(self, df, length):
+        df['High_Max'] = df['High'].rolling(window=length).max()
+        df['Low_Min'] = df['Low'].rolling(window=length).min()
+        df['Top_Swing'] = np.where(df['High'] > df['High_Max'].shift(1), df['High'], np.nan)
+        df['Bottom_Swing'] = np.where(df['Low'] < df['Low_Min'].shift(1), df['Low'], np.nan)
+        df['Top_Swing'].fillna(method='ffill', inplace=True)
+        df['Bottom_Swing'].fillna(method='ffill', inplace=True)
+        return df
+
+    def calculate_order_blocks(self, df, sensitivity):
+        df['Order_Block_High'] = df['High'].rolling(window=sensitivity).max()
+        df['Order_Block_Low'] = df['Low'].rolling(window=sensitivity).min()
+        return df
+
+    def calculate_fvg(self, df):
+        df['FVG_Up'] = np.where((df['Low'] > df['High'].shift(1)), df['Low'], np.nan)
+        df['FVG_Down'] = np.where((df['High'] < df['Low'].shift(1)), df['High'], np.nan)
+        df['FVG_Up'].fillna(method='ffill', inplace=True)
+        df['FVG_Down'].fillna(method='ffill', inplace=True)
+        return df
+
+    def custom_indicator(self, df, pivot_length=25, ob_sensitivity=10):
+        df = self.calculate_pivots(df, pivot_length)
+        df = self.calculate_order_blocks(df, ob_sensitivity)
+        df = self.calculate_fvg(df)
+        return df
+
+
+class MacdAndRSIManager(StrategyManager):
+    def calculate_macd(self, data, short_window=12, long_window=26, signal_window=9):
+        data['EMA12'] = data['Close'].ewm(span=short_window, adjust=False).mean()
+        data['EMA26'] = data['Close'].ewm(span=long_window, adjust=False).mean()
+        data['MACD'] = data['EMA12'] - data['EMA26']
+        data['Signal_Line'] = data['MACD'].ewm(span=signal_window, adjust=False).mean()
+        data['MACD_Histogram'] = data['MACD'] - data['Signal_Line']
+        return data
+
+    def calculate_rsi(self, data, window=14):
+        delta = data['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        RS = gain / loss
+        data['RSI'] = 100 - (100 / (1 + RS))
+        return data
+
+    def is_trending(self, data, window=14, threshold=0.02):
+        data['Rolling_Max'] = data['Close'].rolling(window).max()
+        data['Rolling_Min'] = data['Close'].rolling(window).min()
+        data['Trend_Strength'] = (data['Rolling_Max'] - data['Rolling_Min']) / data['Rolling_Min']
+        data['Trending'] = np.where(data['Trend_Strength'] > threshold, 1, 0)
+        return data
+
+    def generate_signals(self, data):
+        data['Buy_Signal'] = np.where((data['MACD'] > data['Signal_Line']) & (data['RSI'] > 30) & (data['RSI'] < 70) & (
+                    data['Trending'] == 1), 1, 0)
+        data['Sell_Signal'] = np.where(
+            (data['MACD'] < data['Signal_Line']) & (data['RSI'] > 30) & (data['RSI'] < 70) & (data['Trending'] == 1),
+            -1, 0)
+        return data
+
+    def backtest_strategy(self, data, initial_balance=10000, tp_pct=Decimal('0.03'), sl_pct=Decimal('0.02')):
+        balance = initial_balance
+        position = 0  # Positive for long, negative for short
+        entry_price = 0
+        tp_count = 0
+        sl_count = 0
+        win_trades = 0
+        total_trades = 0
+
+        for i in range(len(data)):
+            if data['Buy_Signal'].iloc[i] == 1 and position == 0:
+                position = balance / data['Close'].iloc[i]
+                entry_price = data['Close'].iloc[i]
+                balance = 0
+                total_trades += 1
+            elif data['Sell_Signal'].iloc[i] == -1 and position == 0:
+                position = -balance / data['Close'].iloc[i]
+                entry_price = data['Close'].iloc[i]
+                balance = 0
+                total_trades += 1
+            elif position > 0:  # Long position
+                if data['Close'].iloc[i] >= entry_price * (1 + tp_pct):
+                    balance = position * data['Close'].iloc[i]
+                    position = 0
+                    tp_count += 1
+                    win_trades += 1
+                elif data['Close'].iloc[i] <= entry_price * (1 - sl_pct):
+                    balance = position * data['Close'].iloc[i]
+                    position = 0
+                    sl_count += 1
+            elif position < 0:  # Short position
+                if data['Close'].iloc[i] <= entry_price * (1 - tp_pct):
+                    balance = -position * data['Close'].iloc[i]
+                    position = 0
+                    tp_count += 1
+                    win_trades += 1
+                elif data['Close'].iloc[i] >= entry_price * (1 + sl_pct):
+                    balance = -position * data['Close'].iloc[i]
+                    position = 0
+                    sl_count += 1
+
+        # If still holding a position, close it at the end
+        # if position > 0:
+        #     balance = position * data['Close'].iloc[-1]
+        # elif position < 0:
+        #     balance = -position * data['Close'].iloc[-1]
+        if balance == 0:
+            balance = initial_balance
+        pnl = balance - initial_balance
+        self.pnl += pnl
+        win_rate = (win_trades / total_trades) * 100 if total_trades > 0 else 0
+        return balance, tp_count, sl_count, win_rate
+
+    def run_backtest(self, data):
+        df = pd.DataFrame(data)
+
+        # Apply the strategy
+        df = self.calculate_macd(df)
+        df = self.calculate_rsi(df)
+        df = self.is_trending(df)
+        df = self.generate_signals(df)
+
+        # Backtest the strategy
+        final_balance, tp_count, sl_count, win_rate = self.backtest_strategy(df)
+        print(f"Final balance: {final_balance}")
+        print(f"Take profit count: {tp_count}")
+        print(f"Stop loss count: {sl_count}")
+        print(f"Win rate: {win_rate}%")
+
+
+class ARGIndicator(StrategyManager):
+    def __init__(self):
+        super().__init__()
+        self.first_ma_window = 14
+        self.second_ma_window = 50
+        self.third_ma_window = 200
+        self.signal_threshold = 7
+        self.opposite_trend_threshold = Decimal('0.001')
+        self.trend_threshold = Decimal('0.002')
+        self.change_exposure()
+        columns = ['Close', 'High', 'Low', 'ts', 'date', f'SMA_{self.first_ma_window}',
+                   f'SMA_{self.second_ma_window}', f'SMA_{self.third_ma_window}', 'first', 'second']
+        self.signals = pd.DataFrame(columns=columns)
+
+    def sma(self, df, window=14):
+        df[f'SMA_{window}'] = df['Close'].rolling(window=window).mean()
+        return df
+
+    def generate_signals(self, df):
+        for index, candle in df.iterrows():
+            if index < 7 + self.third_ma_window:
+                continue
+            if self.first_exposure == self.second_exposure:
+                reached = self.check_ema_reached(df=df, index=index, window_size=self.third_ma_window)
+                if not reached:
+                    reached = self.check_ema_reached(df=df, index=index, window_size=self.second_ma_window)
+                    if not reached:
+                        reached = self.check_ema_reached(df=df, index=index, window_size=self.first_ma_window)
+                if reached is True:
+                    self.add_signal(row=candle)
+                    # print(f"got signal, timestamp: {candle['ts']}, ema_size: {self.exposure_ema_window} - "
+                    #       f"first: {self.first_exposure}, second: {self.second_exposure}")
+            done = self.check_if_price_crosses_green_area(df=df, index=index)
+            if done is True:
+                self.add_signal(row=candle)
+                # print(f"finished exposure, candle: {candle}")
+
+    def check_signal_threshold_crosses(self, df, window_size):
+        for index, candle in df.iterrows():
+            if candle['Low'] < candle[f'SMA_{window_size}'] < candle['High']:
+                return True
+        return False
+
+    def check_ema_reached(self, df, index, window_size):
+        candle = df.iloc[index]
+        if self.check_signal_threshold_crosses(df.iloc[index - self.signal_threshold:index],
+                                               window_size=window_size) is True:
+            return False
+        previous_candle = df.iloc[index - 1]
+        if candle['Low'] < candle[f'SMA_{window_size}'] < candle['High']:
+            if previous_candle['Low'] > candle[f'SMA_{window_size}']:
+                self.change_exposure(first=1, second=-1, candle=candle, window_size=window_size)
+                return True
+            elif previous_candle['High'] < candle[f'SMA_{window_size}']:
+                self.change_exposure(first=-1, second=1, candle=candle, window_size=window_size)
+                return True
+        return False
+
+    def check_if_price_crosses_green_area(self, df, index):
+        candle = df.iloc[index]
+        if self.first_exposure > 0:
+            if ((candle['Low'] < Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) *
+                    (Decimal('1') - self.opposite_trend_threshold)) or
+                    candle['High'] > Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) * (Decimal('1') + self.trend_threshold)):
+                self.change_exposure()
+                return True
+        if self.second_exposure > 0:
+            if ((candle['High'] > Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) *
+                 (Decimal('1') + self.opposite_trend_threshold)) or
+                    candle['Low'] < Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) * (Decimal('1') - self.trend_threshold)):
+                self.change_exposure()
+                return True
+        return False
+
+    def change_exposure(self, first=0, second=0, candle=None, window_size=None):
+        self.first_exposure = first
+        self.second_exposure = second
+        self.exposure_candle = candle
+        self.exposure_ema_window = window_size
+
+    def run_backtest(self, data):
+        df = self.sma(df=data, window=self.first_ma_window)
+        df = self.sma(df=data, window=self.second_ma_window)
+        df = self.sma(df=data, window=self.third_ma_window)
+        self.generate_signals(df)
+
+    def add_signal(self, row):
+        print(row)
+        row['first'] = self.first_exposure
+        row['second'] = self.second_exposure
+        self.signals.loc[len(self.signals.index)] = row
+
+    def create_csv_from_signals(self):
+        csv_file_path = 'signals.csv'
+        self.signals.to_csv(csv_file_path, index=False)
+
 
 strategy_manager = StrategyManager()
+macd_and_rsi_manager = MacdAndRSIManager()
+arg_manager = ARGIndicator()
