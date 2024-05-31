@@ -493,17 +493,21 @@ class ARGIndicator(StrategyManager):
         return False
 
     def check_if_price_crosses_green_area(self, df, index):
+        try:
+            df.iloc[index + 1]
+        except IndexError:
+            return False
         candle = df.iloc[index]
         if self.first_exposure > 0:
-            if ((candle['Low'] < Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) *
+            if ((candle['Close'] < Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) *
                     (Decimal('1') - self.opposite_trend_threshold)) or
-                    candle['High'] > Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) * (Decimal('1') + self.trend_threshold)):
+                    candle['Close'] > Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) * (Decimal('1') + self.trend_threshold)):
                 self.change_exposure()
                 return True
         if self.second_exposure > 0:
-            if ((candle['High'] > Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) *
+            if ((candle['Close'] > Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) *
                  (Decimal('1') + self.opposite_trend_threshold)) or
-                    candle['Low'] < Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) * (Decimal('1') - self.trend_threshold)):
+                    candle['Close'] < Decimal(str(self.exposure_candle[f'SMA_{self.exposure_ema_window}'])) * (Decimal('1') - self.trend_threshold)):
                 self.change_exposure()
                 return True
         return False

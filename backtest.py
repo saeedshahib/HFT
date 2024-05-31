@@ -64,6 +64,7 @@ def run_backtest_arg_manager():
     arg_manager.run_backtest(data)
     arg_manager.create_csv_from_signals()
 
+
 if __name__ == '__main__':
     run_backtest_arg_manager()
     # run_backtest_macd_rsi()
