@@ -9,12 +9,14 @@ import requests
 import datetime
 
 from django.conf import settings
+from pymexc import spot
 
 
 class MEXC(APIManagerInterface):
     base_url = 'https://contract.mexc.com/'
     api_key = settings.MEXC_API_KEY
     api_secret = settings.MEXC_API_SECRET
+    spot_obj = spot.HTTP(api_key=api_key, api_secret=api_secret)
 
     def generate_headers(self, http_method,  params, api_key, api_secret):
         # Get current time for 'Request-Time' header
@@ -115,3 +117,7 @@ class MEXC(APIManagerInterface):
 
     def set_sl_tp(self, symbol, tp_price, sl_price):
         raise NotImplementedError
+
+    def place_immediate_or_cancel_order(self, symbol, side, amount, order_type, unique_id, price):
+        self.spot_obj.new_order(symbol=symbol, side=side, order_type=str(order_type).upper(), quantity=amount,
+                                price=price, new_client_order_id=unique_id)

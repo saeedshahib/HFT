@@ -66,8 +66,8 @@ def run_backtest_arg_manager():
 
 
 if __name__ == '__main__':
-    run_backtest_arg_manager()
-    # run_backtest_macd_rsi()
+    # run_backtest_arg_manager()
+    run_backtest_macd_rsi()
     # print("tp_count: ", strategy_manager.tp_count)
     # print("sl_count: ", strategy_manager.sl_count)
     # print("pnl: ", strategy_manager.pnl)
