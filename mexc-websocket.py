@@ -37,6 +37,11 @@ def handle_order_book_message(message):
 
 def handle_order_update_message(message):
     #  Todo change arbitrage status to open if an order gets filled (check status it should be finalized)
+    symbol = message['s']
+    data = message['d']
+    unique_id = data['c']
+
+    ArbitragePosition.update_status_based_on_websocket_payload(order_id=unique_id, symbol=symbol)
     print(message)
 
 
