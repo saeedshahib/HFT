@@ -8,7 +8,7 @@ from django.db import models
 from utils.models import BaseModel
 from utils.bases import *
 from api_manager.bybit_api import Bybit
-from api_manager.mexc_api import MEXC
+from api_manager.mexc_api import MEXCFutures, MEXCSpot
 from utils.redis import *
 
 from .indicator_manager import strategy_manager
@@ -50,7 +50,10 @@ class Market(BaseModel):
 
     def get_exchange_object(self):
         if self.exchange == Market.Exchange.MEXC.value:
-            return MEXC()
+            if self.market_type == Market.Type.Futures.value:
+                return MEXCFutures()
+            elif self.market_type == Market.Type.Spot.value:
+                return MEXCSpot()
         elif self.exchange == Market.Exchange.Bybit.value:
             return Bybit()
         else:
@@ -92,7 +95,12 @@ class Order(BaseModel):
             self.symbol = self.market.symbol
             self.amount = truncate(self.amount, self.market.first_currency.precision)
             super().save(*args, **kwargs)
-            self.place_order()
+            if self.order_type == Order.OrderType.MARKET.value:
+                self.place_order()
+            elif self.order_type == Order.OrderType.ImmediateOrCancel.value:
+                self.place_immediate_or_cancel_order()
+            else:
+                raise NotImplementedError
         else:
             super().save(*args, **kwargs)
 
@@ -100,18 +108,19 @@ class Order(BaseModel):
         exchange_obj = self.market.get_exchange_object()
         response = exchange_obj.place_market_order(symbol=self.symbol,
                                                    amount=self.amount,
-                                                   side=self.side, unique_id=f'test2_{self.id}',
+                                                   side=self.side, unique_id=self.id,
                                                    order_type=self.order_type,
                                                    take_profit=self.take_profit_price,
                                                    stop_loss=self.stop_loss_price)
         print(response)
-        self.update_status()
+        # self.update_status()
 
     def place_immediate_or_cancel_order(self):
         exchange_obj = self.market.get_exchange_object()
-        response = exchange_obj.place_immediate_or_cancel_order(symbol=self.symbol, unique_id=f'test3_{self.id}',
+        response = exchange_obj.place_immediate_or_cancel_order(symbol=self.symbol, unique_id=self.id,
                                                                 order_type=self.order_type, amount=self.amount,
                                                                 side=self.side, price=self.price)
+        return response
 
     def update_status(self):
         exchange_obj = self.market.get_exchange_object()
@@ -121,6 +130,17 @@ class Order(BaseModel):
         self.status = order_details['orderStatus']
         self.save(update_fields=['filled_amount', 'average_price', 'status', 'updated_at'])
 
+    def update_filled_amount_and_state(self, filled_amount, avg_price=None):
+        if avg_price is not None:
+            self.average_price = avg_price
+        self.filled_amount = filled_amount
+        if self.amount == self.filled_amount:
+            self.status = self.Status.FILLED.value
+        elif self.amount > self.filled_amount:
+            self.status = self.Status.PARTIALLY_FILLED_CANCELLED.value
+        else:
+            raise Exception("amount must be equal or greater than filled amount")
+        self.save(update_fields=['filled_amount', 'average_price', 'status', 'updated_at'])
 
 class Trade(BaseModel):
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
@@ -509,50 +529,71 @@ class Position(BaseModel):
 class ArbitragePosition(BaseModel):
     class ArbitrageStatus(models.TextChoices):
         Pending = "Pending"
-        Open = 'open'
-        ClosedWithTP = 'closed with tp'
-        ClosedWithSL = 'closed with sl'
+        Open = 'Open'
+        CloseRequested = "Close requested"
+        ClosedWithTP = 'Closed with tp'
+        ClosedWithSL = 'Closed with sl'
 
-    order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True)
+    open_order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, related_name='open_order')
+    close_order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, related_name='close_order')
     source_market = models.ForeignKey(Market, on_delete=models.SET_NULL, null=True, related_name='source_market')
     source_price = models.DecimalField(max_digits=32, decimal_places=16)
     target_market = models.ForeignKey(Market, on_delete=models.SET_NULL, null=True, related_name='target_market')
     target_price = models.DecimalField(max_digits=32, decimal_places=16)
     closed_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    pnl = models.DecimalField(max_digits=32, decimal_places=16, null=True)
     pnl_percent = models.DecimalField(max_digits=32, decimal_places=16, null=True)
     status = models.CharField(choices=ArbitrageStatus.choices, default=ArbitrageStatus.Open.value, max_length=32)
 
     def save(self, *args, **kwargs):
         if not self.pk:
-            #  Todo place order
+            usdt_asset = Asset.objects.get(currency=self.source_market.second_currency,
+                                           exchange=self.source_market.exchange).value
+            amount_to_buy = usdt_asset / self.source_price
+            Order.objects.create(market=self.source_market, amount=amount_to_buy,
+                                 side=Order.Side.BUY.value, order_type=Order.OrderType.ImmediateOrCancel.value,
+                                 price=self.source_price)
             super().save(*args, **kwargs)
         else:
             super().save(*args, **kwargs)
 
     def check_and_close_position(self, reached_price):
-        #  Todo close position
         reached_price = Decimal(str(reached_price))
-        if reached_price >= self.target_price:
-            self.closed_price = reached_price
-            self.status = self.ArbitrageStatus.ClosedWithTP.value
-            self.pnl_percent = ((self.closed_price - self.source_price) / self.source_price) * 100
-            self.save(update_fields=['closed_price', 'status', 'pnl_percent', 'updated_at'])
-        elif reached_price <= self.source_price * Decimal('0.999'):
-            self.closed_price = reached_price
-            self.status = self.ArbitrageStatus.ClosedWithSL.value
-            self.pnl_percent = ((self.closed_price - self.source_price) / self.source_price) * 100
-            self.save(update_fields=['closed_price', 'status', 'pnl_percent', 'updated_at'])
+        if reached_price >= self.target_price or reached_price <= self.source_price * Decimal('0.999'):
+            self.status = self.ArbitrageStatus.CloseRequested.value
+            self.save(update_fields=['status', 'updated_at'])
+            Order.objects.create(market=self.source_market, amount=self.open_order.filled_amount,
+                                 side=Order.Side.SELL.value, order_type=Order.OrderType.MARKET.value)
+
 
     @staticmethod
     def open_position_if_not_open(source_price, target_price, source_market, target_market):
         if ArbitragePosition.objects.filter(status__in=[ArbitragePosition.ArbitrageStatus.Pending.value,
-                                                        ArbitragePosition.ArbitrageStatus.Open.value]).exists():
+                                                        ArbitragePosition.ArbitrageStatus.Open.value,
+                                                        ArbitragePosition.ArbitrageStatus.CloseRequested]).exists():
             return
         ArbitragePosition.objects.create(source_market=source_market, target_market=target_market,
                                          status=ArbitragePosition.ArbitrageStatus.Pending.value,
                                          source_price=source_price, target_price=target_price)
 
+    @staticmethod
+    def update_status_based_on_websocket_payload(order_id, filled_amount, avg_price=None):
+        order = Order.objects.get(id=order_id)
+        order.update_filled_amount_and_state(filled_amount=filled_amount, avg_price=avg_price)
+        if order.side == Order.Side.BUY.value:
+            arbitrage_position = ArbitragePosition.objects.get(open_order=order)
+            arbitrage_position.status = ArbitragePosition.ArbitrageStatus.Open.value
+            arbitrage_position.save(update_fields=['status', 'updated_at'])
+        else:
+            arbitrage_position = ArbitragePosition.objects.get(closed_order=order)
+            arbitrage_position.closed_price = avg_price
+            arbitrage_position.pnl_percent = ((arbitrage_position.closed_price - arbitrage_position.source_price) /
+                                              arbitrage_position.source_price)
+            arbitrage_position.pnl = order.filled_amount * (1 + arbitrage_position.pnl_percent)
+            arbitrage_position.save(update_fields=['closed_price', 'status', 'pnl_percent', 'updated_at'])
+
 
 class Asset(BaseModel):
-    #  Todo add asset model here, currency & exchange
-    pass
+    currency = models.ForeignKey(Currency, on_delete=models.SET_NULL, null=True)
+    exchange = models.CharField(max_length=32, choices=Market.Exchange.choices)
+    value = models.DecimalField(max_digits=32, decimal_places=16)

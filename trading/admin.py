@@ -39,3 +39,8 @@ class PositionAdmin(BaseAdminWithActionButtons):
 @admin.register(ArbitragePosition)
 class ArbitragePositionAdmin(BaseAdminWithActionButtons):
     list_display = [field.name for field in ArbitragePosition._meta.fields]
+
+
+@admin.register(Asset)
+class AssetAdmin(admin.ModelAdmin):
+    list_display = [field.name for field in Asset._meta.fields]

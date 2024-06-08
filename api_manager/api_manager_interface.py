@@ -66,3 +66,6 @@ class APIManagerInterface(metaclass=abc.ABCMeta):
 
     def set_sl_tp(self, symbol, tp_price, sl_price):
         raise NotImplementedError
+
+    def place_immediate_or_cancel_order(self, symbol, side, amount, order_type, unique_id, price):
+        raise NotImplementedError

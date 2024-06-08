@@ -12,11 +12,10 @@ from django.conf import settings
 from pymexc import spot
 
 
-class MEXC(APIManagerInterface):
+class MEXCFutures(APIManagerInterface):
     base_url = 'https://contract.mexc.com/'
     api_key = settings.MEXC_API_KEY
     api_secret = settings.MEXC_API_SECRET
-    spot_obj = spot.HTTP(api_key=api_key, api_secret=api_secret)
 
     def generate_headers(self, http_method,  params, api_key, api_secret):
         # Get current time for 'Request-Time' header
@@ -119,5 +118,18 @@ class MEXC(APIManagerInterface):
         raise NotImplementedError
 
     def place_immediate_or_cancel_order(self, symbol, side, amount, order_type, unique_id, price):
-        self.spot_obj.new_order(symbol=symbol, side=side, order_type=str(order_type).upper(), quantity=amount,
-                                price=price, new_client_order_id=unique_id)
+        raise NotImplementedError
+
+
+class MEXCSpot(APIManagerInterface):
+    api_key = settings.MEXC_API_KEY
+    api_secret = settings.MEXC_API_SECRET
+    spot_obj = spot.HTTP(api_key=api_key, api_secret=api_secret)
+
+    def place_immediate_or_cancel_order(self, symbol, side, amount, order_type, unique_id, price):
+        self.spot_obj.new_order(symbol=symbol, side=str(side).upper(), order_type=str(order_type).upper(),
+                                quantity=amount, price=price, new_client_order_id=unique_id)
+
+    def place_market_order(self, symbol, side, amount, order_type, unique_id, take_profit=None, stop_loss=None):
+        self.spot_obj.new_order(symbol=symbol, side=str(side).upper(), order_type=str(order_type).upper(),
+                                quantity=amount, new_client_order_id=str(unique_id))
