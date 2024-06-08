@@ -34,3 +34,8 @@ class StrategyAdmin(BaseAdminWithActionButtons):
 @admin.register(Position)
 class PositionAdmin(BaseAdminWithActionButtons):
     list_display = [field.name for field in Position._meta.fields]
+
+
+@admin.register(ArbitragePosition)
+class ArbitragePositionAdmin(BaseAdminWithActionButtons):
+    list_display = [field.name for field in ArbitragePosition._meta.fields]

@@ -29,6 +29,7 @@ class Market(BaseModel):
         BingX = "BingX"
         Kucoin = "Kucoin"
         Bybit = "Bybit"
+        Binance = "Binance"
 
     class Type(models.TextChoices):
         Spot = "Spot"
@@ -64,6 +65,7 @@ class Order(BaseModel):
     class OrderType(models.TextChoices):
         LIMIT = "Limit"
         MARKET = "Market"
+        ImmediateOrCancel = "IMMEDIATE_OR_CANCEL"
 
     class Status(models.TextChoices):
         PENDING = "New"
@@ -104,6 +106,12 @@ class Order(BaseModel):
                                                    stop_loss=self.stop_loss_price)
         print(response)
         self.update_status()
+
+    def place_immediate_or_cancel_order(self):
+        exchange_obj = self.market.get_exchange_object()
+        response = exchange_obj.place_immediate_or_cancel_order(symbol=self.symbol, unique_id=f'test3_{self.id}',
+                                                                order_type=self.order_type, amount=self.amount,
+                                                                side=self.side, price=self.price)
 
     def update_status(self):
         exchange_obj = self.market.get_exchange_object()
@@ -496,3 +504,55 @@ class Position(BaseModel):
             #         self.close_position(side=Order.Side.BUY.value)
         else:
             raise Exception("Position is not Open")
+
+
+class ArbitragePosition(BaseModel):
+    class ArbitrageStatus(models.TextChoices):
+        Pending = "Pending"
+        Open = 'open'
+        ClosedWithTP = 'closed with tp'
+        ClosedWithSL = 'closed with sl'
+
+    order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True)
+    source_market = models.ForeignKey(Market, on_delete=models.SET_NULL, null=True, related_name='source_market')
+    source_price = models.DecimalField(max_digits=32, decimal_places=16)
+    target_market = models.ForeignKey(Market, on_delete=models.SET_NULL, null=True, related_name='target_market')
+    target_price = models.DecimalField(max_digits=32, decimal_places=16)
+    closed_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    pnl_percent = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    status = models.CharField(choices=ArbitrageStatus.choices, default=ArbitrageStatus.Open.value, max_length=32)
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            #  Todo place order
+            super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+
+    def check_and_close_position(self, reached_price):
+        #  Todo close position
+        reached_price = Decimal(str(reached_price))
+        if reached_price >= self.target_price:
+            self.closed_price = reached_price
+            self.status = self.ArbitrageStatus.ClosedWithTP.value
+            self.pnl_percent = ((self.closed_price - self.source_price) / self.source_price) * 100
+            self.save(update_fields=['closed_price', 'status', 'pnl_percent', 'updated_at'])
+        elif reached_price <= self.source_price * Decimal('0.999'):
+            self.closed_price = reached_price
+            self.status = self.ArbitrageStatus.ClosedWithSL.value
+            self.pnl_percent = ((self.closed_price - self.source_price) / self.source_price) * 100
+            self.save(update_fields=['closed_price', 'status', 'pnl_percent', 'updated_at'])
+
+    @staticmethod
+    def open_position_if_not_open(source_price, target_price, source_market, target_market):
+        if ArbitragePosition.objects.filter(status__in=[ArbitragePosition.ArbitrageStatus.Pending.value,
+                                                        ArbitragePosition.ArbitrageStatus.Open.value]).exists():
+            return
+        ArbitragePosition.objects.create(source_market=source_market, target_market=target_market,
+                                         status=ArbitragePosition.ArbitrageStatus.Pending.value,
+                                         source_price=source_price, target_price=target_price)
+
+
+class Asset(BaseModel):
+    #  Todo add asset model here, currency & exchange
+    pass

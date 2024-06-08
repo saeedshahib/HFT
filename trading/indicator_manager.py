@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 import pandas as pd
 import numpy as np
+import ta
 
 
 class StrategyManager:
@@ -21,18 +22,21 @@ class StrategyManager:
         close = []
         ts = []
         date = []
+        volume = []
         for candle in reversed(recent_candles):
-            close.append(Decimal(str((candle[4]))))
-            high.append(Decimal(str((candle[2]))))
-            low.append(Decimal(str((candle[3]))))
+            close.append(float(str((candle[4]))))
+            high.append(float(str((candle[2]))))
+            low.append(float(str((candle[3]))))
             ts.append(str(int(candle[0]) // 1000))
             date.append(datetime.fromtimestamp(int(candle[0]) // 1000))
+            volume.append(float(str(candle[6])))
         data = {
             'Close': close,
             'High': high,
             'Low': low,
             'ts': ts,
-            'date': date
+            'date': date,
+            'Volume': volume,
         }
         # index = pd.date_range(start='2024-01-01 03:00', periods=len(close), freq='h')
         df = pd.DataFrame(data)
@@ -331,6 +335,8 @@ class StrategyManager:
         df = self.calculate_fvg(df)
         return df
 
+    def run_backtest(self, df):
+        raise NotImplementedError
 
 class MacdAndRSIManager(StrategyManager):
     def calculate_macd(self, data, short_window=12, long_window=26, signal_window=9):
@@ -364,7 +370,7 @@ class MacdAndRSIManager(StrategyManager):
             -1, 0)
         return data
 
-    def backtest_strategy(self, data, initial_balance=10000, tp_pct=Decimal('0.03'), sl_pct=Decimal('0.02')):
+    def backtest_strategy(self, data, initial_balance=10000, tp_pct=Decimal('0.01'), sl_pct=Decimal('0.005')):
         balance = initial_balance
         position = 0  # Positive for long, negative for short
         entry_price = 0
@@ -386,32 +392,32 @@ class MacdAndRSIManager(StrategyManager):
                 total_trades += 1
             elif position > 0:  # Long position
                 if data['Close'].iloc[i] >= entry_price * (1 + tp_pct):
-                    balance = position * data['Close'].iloc[i]
+                    balance = position * data['Close'].iloc[i] * Decimal('0.998')
                     position = 0
                     tp_count += 1
                     win_trades += 1
                 elif data['Close'].iloc[i] <= entry_price * (1 - sl_pct):
-                    balance = position * data['Close'].iloc[i]
+                    balance = position * data['Close'].iloc[i] * Decimal('0.998')
                     position = 0
                     sl_count += 1
             elif position < 0:  # Short position
                 if data['Close'].iloc[i] <= entry_price * (1 - tp_pct):
-                    balance = -position * data['Close'].iloc[i]
+                    balance = -position * data['Close'].iloc[i] * Decimal('0.998')
                     position = 0
                     tp_count += 1
                     win_trades += 1
                 elif data['Close'].iloc[i] >= entry_price * (1 + sl_pct):
-                    balance = -position * data['Close'].iloc[i]
+                    balance = -position * data['Close'].iloc[i] * Decimal('0.998')
                     position = 0
                     sl_count += 1
 
         # If still holding a position, close it at the end
-        # if position > 0:
-        #     balance = position * data['Close'].iloc[-1]
-        # elif position < 0:
-        #     balance = -position * data['Close'].iloc[-1]
-        if balance == 0:
-            balance = initial_balance
+        if position > 0:
+            balance = position * data['Close'].iloc[-1]
+        elif position < 0:
+            balance = -position * data['Close'].iloc[-1]
+        # if balance == 0:
+        #     balance = initial_balance
         pnl = balance - initial_balance
         self.pnl += pnl
         win_rate = (win_trades / total_trades) * 100 if total_trades > 0 else 0
@@ -535,6 +541,256 @@ class ARGIndicator(StrategyManager):
         self.signals.to_csv(csv_file_path, index=False)
 
 
+class TradingViewIndicator(StrategyManager):
+
+    def hull_moving_average(self, df, window):
+        wma_half = ta.trend.sma_indicator(df, window // 2)
+        wma_full = ta.trend.sma_indicator(df, window)
+        hma = ta.trend.sma_indicator(2 * wma_half - wma_full, int(window ** 0.5))
+        return hma
+
+    def generate_df(self, recent_candles):
+        df = super().generate_df(recent_candles)
+        df['EMA10'] = ta.trend.ema_indicator(df['Close'], window=10)
+        df['SMA10'] = ta.trend.sma_indicator(df['Close'], window=10)
+        df['EMA20'] = ta.trend.ema_indicator(df['Close'], window=20)
+        df['SMA20'] = ta.trend.sma_indicator(df['Close'], window=20)
+        df['EMA30'] = ta.trend.ema_indicator(df['Close'], window=30)
+        df['SMA30'] = ta.trend.sma_indicator(df['Close'], window=30)
+        df['EMA50'] = ta.trend.ema_indicator(df['Close'], window=50)
+        df['SMA50'] = ta.trend.sma_indicator(df['Close'], window=50)
+        df['EMA100'] = ta.trend.ema_indicator(df['Close'], window=100)
+        df['SMA100'] = ta.trend.sma_indicator(df['Close'], window=100)
+        df['EMA200'] = ta.trend.ema_indicator(df['Close'], window=200)
+        df['SMA200'] = ta.trend.sma_indicator(df['Close'], window=200)
+        df['Ichimoku'] = ta.trend.ichimoku_base_line(df['High'], df['Low'])
+        df['VWMA20'] = ta.volume.volume_weighted_average_price(df['High'], df['Low'], df['Close'], df['Volume'],
+                                                               window=20)
+        df['HMA9'] = self.hull_moving_average(df['Close'], 9)
+
+        # Calculate oscillators
+        df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
+        df['StochK'] = ta.momentum.stoch(df['High'], df['Low'], df['Close'], window=14, smooth_window=3)
+        df['CCI'] = ta.trend.cci(df['High'], df['Low'], df['Close'], window=20)
+        df['ADX'] = ta.trend.adx(df['High'], df['Low'], df['Close'], window=14)
+        df['AO'] = ta.momentum.awesome_oscillator(df['High'], df['Low'])
+        # df['Momentum'] = ta.momentum.momentum(df['Close'], window=10)
+        df['Momentum'] = df['Close'].diff(periods=10)
+        df['MACD'] = ta.trend.macd_diff(df['Close'])
+        df['StochRSI'] = ta.momentum.stochrsi_k(df['Close'], window=14, smooth1=3, smooth2=3)
+        df['WilliamsR'] = ta.momentum.williams_r(df['High'], df['Low'], df['Close'], lbp=14)
+        df['BullBearPower'] = df['Close'] - ta.trend.ema_indicator(df['Close'], window=13)
+        df['UltimateOsc'] = ta.momentum.ultimate_oscillator(df['High'], df['Low'], df['Close'], window1=7, window2=14,
+                                                            window3=28)
+        return df
+
+    def generate_signals(self, row):
+        signals = []
+        # Moving Averages
+        if row['Close'] > row['EMA10']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['SMA10']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['EMA20']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['SMA20']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['EMA30']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['SMA30']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['EMA50']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['SMA50']:
+            signals.append('Sell')
+        else:
+            signals.append('Buy')
+
+        if row['Close'] > row['EMA100']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['SMA100']:
+            signals.append('Sell')
+        else:
+            signals.append('Buy')
+
+        if row['Close'] > row['EMA200']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['SMA200']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['Ichimoku']:
+            signals.append('Buy')
+        else:
+            signals.append('Neutral')
+
+        if row['Close'] > row['VWMA20']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['Close'] > row['HMA9']:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        # Oscillators
+        if row['RSI'] > 50:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        if row['StochK'] > 80:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        if row['CCI'] > 100:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        if row['ADX'] > 25:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        if row['AO'] > 0:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        if row['Momentum'] > 100:
+            signals.append('Sell')
+        else:
+            signals.append('Neutral')
+
+        if row['MACD'] > 0:
+            signals.append('Buy')
+        else:
+            signals.append('Sell')
+
+        if row['StochRSI'] > 80:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        if row['WilliamsR'] > -20:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        if row['BullBearPower'] > 0:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        if row['UltimateOsc'] > 50:
+            signals.append('Neutral')
+        else:
+            signals.append('Neutral')
+
+        return signals
+
+    def decide_position(self, signals):
+        buy_signals = signals.count('Buy')
+        sell_signals = signals.count('Sell')
+        neutral_signals = signals.count('Neutral')
+        threshold = 0.85
+        neutral_threshold = 0.5
+        if (buy_signals / (buy_signals + sell_signals) >= threshold and
+                buy_signals / (buy_signals + sell_signals + neutral_signals) >= neutral_threshold):
+            print("long")
+            print(buy_signals / (buy_signals + sell_signals))
+            print(buy_signals / (buy_signals + sell_signals + neutral_signals))
+            return 'Long'
+        elif (sell_signals / (buy_signals + sell_signals) >= threshold and
+                sell_signals / (buy_signals + sell_signals + neutral_signals) >= neutral_threshold):
+            print("short")
+            print(sell_signals / (buy_signals + sell_signals))
+            print(sell_signals / (buy_signals + sell_signals + neutral_signals))
+            return 'Short'
+        else:
+            return 'Neutral'
+
+    def run_backtest(self, df):
+        df['Signals'] = df.apply(self.generate_signals, axis=1)
+        df['Position'] = df['Signals'].apply(self.decide_position)
+        initial_balance = 100000
+        balance = initial_balance
+        position = None
+        entry_price = 0
+        tp = 0.04  # Take profit percentage
+        sl = 0.02  # Stop loss percentage
+        wins = 0
+        losses = 0
+        for i in range(1, len(df)):
+            if position == 'Long':
+                if (df['High'].iloc[i] >= entry_price * (1 + tp)) or (df['Low'].iloc[i] <= entry_price * (1 - sl)):
+                    if df['High'].iloc[i] >= entry_price * (1 + tp):
+                        wins += 1
+                        balance += balance * (df['High'].iloc[i] / entry_price - 1) * float('0.998')
+                    else:
+                        losses += 1
+                        balance += balance * (df['Low'].iloc[i] / entry_price - 1) * float('0.998')
+                    position = None
+            elif position == 'Short':
+                if (df['Low'].iloc[i] <= entry_price * (1 - tp)) or (df['High'].iloc[i] >= entry_price * (1 + sl)):
+                    if df['Low'].iloc[i] <= entry_price * (1 - tp):
+                        wins += 1
+                        balance += balance * (entry_price / df['Low'].iloc[i] - 1) * float('0.998')
+                    else:
+                        losses += 1
+                        balance += balance * (entry_price / df['High'].iloc[i] - 1) * float('0.998')
+                    position = None
+            else:
+                if df['Position'].iloc[i] == 'Long':
+                    print("long date: ", df['date'].iloc[i], df['Close'].iloc[i])
+                    position = 'Long'
+                    entry_price = df['Close'].iloc[i]
+                elif df['Position'].iloc[i] == 'Short':
+                    print("short date: ", df['date'].iloc[i], df['Close'].iloc[i])
+                    position = 'Short'
+                    entry_price = df['Close'].iloc[i]
+        winrate = wins / (wins + losses) if (wins + losses) > 0 else 0
+        # pnl = (balance - initial_balance) / initial_balance
+        balance = (1 + (wins * tp) - (losses * sl) - ((wins + losses) * float('0.002'))) * balance
+        pnl = (wins * tp) - (losses * sl) - ((wins + losses) * float('0.002'))
+        print("total trades : ", wins + losses)
+        print("commissions: ", ((wins + losses) * float('0.002')))
+        print(f'Winrate: {winrate:.2f}')
+        print(f'PnL: {pnl:.2f}')
+
+
 strategy_manager = StrategyManager()
 macd_and_rsi_manager = MacdAndRSIManager()
 arg_manager = ARGIndicator()
+trading_view_indicator = TradingViewIndicator()
