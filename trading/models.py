@@ -134,7 +134,9 @@ class Order(BaseModel):
         if avg_price is not None:
             self.average_price = avg_price
         self.filled_amount = filled_amount
-        if self.amount == self.filled_amount:
+        if self.filled_amount == 0:
+            self.status = self.Status.CANCELLED.value
+        elif self.amount == self.filled_amount:
             self.status = self.Status.FILLED.value
         elif self.amount > self.filled_amount:
             self.status = self.Status.PARTIALLY_FILLED_CANCELLED.value
@@ -529,6 +531,7 @@ class Position(BaseModel):
 class ArbitragePosition(BaseModel):
     class ArbitrageStatus(models.TextChoices):
         Pending = "Pending"
+        Cancelled = "Cancelled"
         Open = 'Open'
         CloseRequested = "Close requested"
         ClosedWithTP = 'Closed with tp'
@@ -550,9 +553,10 @@ class ArbitragePosition(BaseModel):
             usdt_asset = Asset.objects.get(currency=self.source_market.second_currency,
                                            exchange=self.source_market.exchange).value
             amount_to_buy = usdt_asset / self.source_price
-            Order.objects.create(market=self.source_market, amount=amount_to_buy,
-                                 side=Order.Side.BUY.value, order_type=Order.OrderType.ImmediateOrCancel.value,
-                                 price=self.source_price)
+            order = Order.objects.create(market=self.source_market, amount=amount_to_buy,
+                                         side=Order.Side.BUY.value, order_type=Order.OrderType.ImmediateOrCancel.value,
+                                         price=self.source_price)
+            self.open_order = order
             super().save(*args, **kwargs)
         else:
             super().save(*args, **kwargs)
@@ -561,9 +565,10 @@ class ArbitragePosition(BaseModel):
         reached_price = Decimal(str(reached_price))
         if reached_price >= self.target_price or reached_price <= self.source_price * Decimal('0.999'):
             self.status = self.ArbitrageStatus.CloseRequested.value
-            self.save(update_fields=['status', 'updated_at'])
-            Order.objects.create(market=self.source_market, amount=self.open_order.filled_amount,
-                                 side=Order.Side.SELL.value, order_type=Order.OrderType.MARKET.value)
+            order = Order.objects.create(market=self.source_market, amount=self.open_order.filled_amount,
+                                         side=Order.Side.SELL.value, order_type=Order.OrderType.MARKET.value)
+            self.close_order = order
+            self.save(update_fields=['status', 'close_order' 'updated_at'])
 
 
     @staticmethod
@@ -582,8 +587,12 @@ class ArbitragePosition(BaseModel):
         order.update_filled_amount_and_state(filled_amount=filled_amount, avg_price=avg_price)
         if order.side == Order.Side.BUY.value:
             arbitrage_position = ArbitragePosition.objects.get(open_order=order)
-            arbitrage_position.status = ArbitragePosition.ArbitrageStatus.Open.value
-            arbitrage_position.save(update_fields=['status', 'updated_at'])
+            if order.status == Order.Status.CANCELLED.value:
+                arbitrage_position.status = ArbitragePosition.ArbitrageStatus.Cancelled.value
+                arbitrage_position.save(update_fields=['status', 'updated_at'])
+            else:
+                arbitrage_position.status = ArbitragePosition.ArbitrageStatus.Open.value
+                arbitrage_position.save(update_fields=['status', 'updated_at'])
         else:
             arbitrage_position = ArbitragePosition.objects.get(closed_order=order)
             arbitrage_position.closed_price = avg_price

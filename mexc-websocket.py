@@ -22,7 +22,6 @@ def handle_order_book_message(message):
     symbol = message['s']
     ask_price = message['d']['asks'][0]['p']
     bid_price = message['d']['bids'][0]['p']
-    print(symbol, ask_price)
     # handle websocket message
     global_redis_instance.set(name=f'{symbol}_ask_spot_mexc', value=ask_price)
     global_redis_instance.set(name=f'{symbol}_bid_spot_mexc', value=bid_price)
@@ -57,20 +56,29 @@ def handle_assets_message(message):
     try:
         print(message)
         data = message['d']
-        currency = Currency.objects.get(data['a'])
+        currency = Currency.objects.get(symbol=data['a'])
         value = Decimal(data['f'])
         asset, _ = Asset.objects.update_or_create(currency=currency, exchange=Market.Exchange.MEXC.value,
                                                   defaults={'value': value})
     except Exception:
         print(traceback.print_exc())
 
+
 ws_spot_client = spot.WebSocket(api_key=api_key, api_secret=api_secret)
 
 ws_spot_client.limit_depth_stream(handle_order_book_message, 'AVAXUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'BTCUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'ETHUSDC', 5)
 ws_spot_client.limit_depth_stream(handle_order_book_message, 'XRPUSDC', 5)
 ws_spot_client.limit_depth_stream(handle_order_book_message, 'WAVESUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'OPUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTTUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'MATICUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'APEUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'JASMYUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNAUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNCUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'SHIBUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTMUSDC', 5)
+ws_spot_client.limit_depth_stream(handle_order_book_message, 'CELUSDC', 5)
 ws_spot_client.account_orders(handle_order_update_message)
 ws_spot_client.account_update(handle_assets_message)
 
