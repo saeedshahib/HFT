@@ -69,3 +69,6 @@ class APIManagerInterface(metaclass=abc.ABCMeta):
 
     def place_immediate_or_cancel_order(self, symbol, side, amount, order_type, unique_id, price):
         raise NotImplementedError
+
+    def cancel_order(self, symbol, order_id):
+        raise NotImplementedError
