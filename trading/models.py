@@ -95,15 +95,17 @@ class Order(BaseModel):
             self.symbol = self.market.symbol
             self.amount = truncate(self.amount, self.market.first_currency.precision)
             super().save(*args, **kwargs)
-            if self.order_type == Order.OrderType.MARKET.value:
-                self.place_order()
-            elif self.order_type in [Order.OrderType.ImmediateOrCancel.value,
-                                     Order.OrderType.LIMIT.value]:
-                self.place_limit_order()
-            else:
-                raise NotImplementedError
         else:
             super().save(*args, **kwargs)
+
+    def execute(self):
+        if self.order_type == Order.OrderType.MARKET.value:
+            self.place_order()
+        elif self.order_type in [Order.OrderType.ImmediateOrCancel.value,
+                                 Order.OrderType.LIMIT.value]:
+            self.place_limit_order()
+        else:
+            raise NotImplementedError
 
     def place_order(self):
         exchange_obj = self.market.get_exchange_object()
@@ -563,6 +565,7 @@ class ArbitragePosition(BaseModel):
                                          price=self.source_price)
             self.open_order = order
             super().save(*args, **kwargs)
+            order.execute()
         else:
             super().save(*args, **kwargs)
 
