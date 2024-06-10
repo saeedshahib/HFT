@@ -42,7 +42,7 @@ def handle_order_update_message(message):
         data = message['d']
         unique_id = int(data['c'])
         status = int(data['s'])
-        filled_amount = Decimal(data['a']) - Decimal(data['A'])
+        filled_amount = Decimal(data['cv'])
         avg_price = Decimal(str(data['ap']))
         if status in [2, 4, 5]:
             ArbitragePosition.update_status_based_on_websocket_payload(order_id=unique_id,

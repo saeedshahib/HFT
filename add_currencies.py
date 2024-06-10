@@ -27,8 +27,8 @@ usdt = Currency.objects.get(symbol='USDT')
 usdc = Currency.objects.get(symbol='USDC')
 
 for key, value in currencies.items():
-    currency = Currency.objects.create(symbol=key, precision=value)
-    Market.objects.create(exchange=Market.Exchange.MEXC.value, symbol=f'{key}USDC', first_currency=currency,
-                          second_currency=usdc, market_type=Market.Type.Spot.value)
-    Market.objects.create(exchange=Market.Exchange.Binance.value, symbol=f'{key}USDT', first_currency=currency,
-                         second_currency=usdt, market_type=Market.Type.Spot.value)
+    currency, _ = Currency.objects.get_or_create(symbol=key, precision=value)
+    Market.objects.get_or_create(exchange=Market.Exchange.MEXC.value, symbol=f'{key}USDC', first_currency=currency,
+                                 second_currency=usdc, market_type=Market.Type.Spot.value)
+    Market.objects.get_or_create(exchange=Market.Exchange.Binance.value, symbol=f'{key}USDT', first_currency=currency,
+                                 second_currency=usdt, market_type=Market.Type.Spot.value)
