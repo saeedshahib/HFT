@@ -133,3 +133,6 @@ class MEXCSpot(APIManagerInterface):
     def place_market_order(self, symbol, side, amount, order_type, unique_id, take_profit=None, stop_loss=None):
         self.spot_obj.new_order(symbol=symbol, side=str(side).upper(), order_type=str(order_type).upper(),
                                 quantity=amount, new_client_order_id=str(unique_id))
+
+    def cancel_order(self, symbol, order_id):
+        self.spot_obj.cancel_order(symbol=symbol, new_client_order_id=order_id, orig_client_order_id=order_id)
