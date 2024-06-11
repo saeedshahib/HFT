@@ -66,21 +66,29 @@ def handle_assets_message(message):
 
 ws_spot_client = spot.WebSocket(api_key=api_key, api_secret=api_secret)
 
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'AVAXUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'XRPUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'WAVESUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'OPUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTTUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'MATICUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'APEUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'JASMYUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNAUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNCUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'SHIBUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTMUSDC', 5)
-ws_spot_client.limit_depth_stream(handle_order_book_message, 'CELUSDC', 5)
-ws_spot_client.account_orders(handle_order_update_message)
-ws_spot_client.account_update(handle_assets_message)
+
+def subscribe():
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'AVAXUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'XRPUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'WAVESUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'OPUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTTUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'MATICUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'APEUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'JASMYUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNAUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNCUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'SHIBUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTMUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'CELUSDC', 5)
+    ws_spot_client.account_orders(handle_order_update_message)
+    ws_spot_client.account_update(handle_assets_message)
+
 
 while True:
-    time.sleep(0.1)
+    try:
+        print(global_redis_instance.get(name=f'XRPUSDC_ask_spot_mexc'))
+        time.sleep(5)
+        subscribe()
+    except:
+        print(traceback.print_exc())

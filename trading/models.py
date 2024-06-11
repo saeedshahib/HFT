@@ -151,6 +151,7 @@ class Order(BaseModel):
             raise Exception("amount must be equal or greater than filled amount")
         self.save(update_fields=['filled_amount', 'average_price', 'status', 'updated_at'])
 
+
 class Trade(BaseModel):
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
     order = models.ForeignKey("Order", on_delete=models.SET_NULL, null=True)
@@ -572,13 +573,16 @@ class ArbitragePosition(BaseModel):
     def check_and_close_position(self, reached_price):
         reached_price = Decimal(str(reached_price))
         if reached_price >= self.target_price or reached_price <= self.source_price * Decimal('0.999'):
+            if reached_price <= self.source_price * Decimal('0.99'):
+                self.close_order.cancel_order()
             print("go close position")
             self.status = self.ArbitrageStatus.CloseRequested.value
             order = Order.objects.create(market=self.source_market, amount=self.open_order.filled_amount,
                                          price=self.source_price * Decimal('0.99'),
                                          side=Order.Side.SELL.value, order_type=Order.OrderType.ImmediateOrCancel.value)
             self.close_order = order
-            self.save(update_fields=['status', 'close_order' 'updated_at'])
+            order.execute()
+            self.save(update_fields=['status', 'close_order', 'updated_at'])
 
 
     @staticmethod
@@ -607,11 +611,12 @@ class ArbitragePosition(BaseModel):
                                                 order_type=Order.OrderType.LIMIT.value,
                                                 price=arbitrage_position.target_price)
                 arbitrage_position.close_order = tp_order
+                tp_order.execute()
                 arbitrage_position.status = ArbitragePosition.ArbitrageStatus.Open.value
                 arbitrage_position.save(update_fields=['status', 'close_order', 'updated_at'])
         else:
             if order.filled_amount > 0:
-                arbitrage_position = ArbitragePosition.objects.get(closed_order=order)
+                arbitrage_position = ArbitragePosition.objects.get(close_order=order)
                 arbitrage_position.closed_price = avg_price
                 arbitrage_position.pnl_percent = ((arbitrage_position.closed_price - arbitrage_position.source_price) /
                                                   arbitrage_position.source_price)

@@ -24,7 +24,7 @@ def main():
         try:
             symbol = msg['data']['s']
             first_currency_symbol = str(symbol).replace('USDT', '')
-            binance_price = Decimal(msg['data']['p'])
+            binance_price = Decimal(msg['data']['a'])
             # print(f"message type: {msg['e']}")
             mexc_ask_price = Decimal(global_redis_instance.get(name=f'{first_currency_symbol}USDC_ask_spot_mexc'))
             difference = (binance_price - mexc_ask_price) / mexc_ask_price
@@ -45,9 +45,12 @@ def main():
 
     # or a multiplex socket can be started like this
     # see Binance docs for stream names
-    streams = ['avaxusdt@aggTrade', 'xrpusdt@aggTrade', 'wavesusdt@aggTrade', 'opusdt@aggTrade', 'fttusdt@aggTrade',
-               'maticusdt@aggTrade', 'apeusdt@aggTrade', 'jasmyusdt@aggTrade', 'lunausdt@aggTrade', 'luncusdt@aggTrade',
-               'shibusdt@aggTrade', 'ftmusdt@aggTrade', 'celusdt@aggTrade',]
+    websocket_type = "bookTicker"
+    streams = [f'avaxusdt@{websocket_type}', f'xrpusdt@{websocket_type}', f'wavesusdt@{websocket_type}',
+               f'opusdt@{websocket_type}', f'fttusdt@{websocket_type}', f'maticusdt@{websocket_type}',
+               f'apeusdt@{websocket_type}', f'jasmyusdt@{websocket_type}', f'lunausdt@{websocket_type}',
+               f'luncusdt@{websocket_type}', f'shibusdt@{websocket_type}', f'ftmusdt@{websocket_type}',
+               f'celusdt@{websocket_type}', ]
     twm.start_multiplex_socket(callback=handle_socket_message, streams=streams)
 
     twm.join()
