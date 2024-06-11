@@ -85,10 +85,12 @@ def subscribe():
     ws_spot_client.account_update(handle_assets_message)
 
 
+subscribe()
+
+
 while True:
     try:
         print(global_redis_instance.get(name=f'XRPUSDC_ask_spot_mexc'))
         time.sleep(5)
-        subscribe()
     except:
         print(traceback.print_exc())
