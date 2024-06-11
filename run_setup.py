@@ -9,7 +9,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'djangoProject.settings')
 os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
 django.setup()
 
-from trading.models import Market, Currency
+from trading.models import Market, Currency, Asset
 
 currencies = dict(
     OP=2,
@@ -25,6 +25,7 @@ currencies = dict(
 )
 usdt = Currency.objects.get(symbol='USDT')
 usdc = Currency.objects.get(symbol='USDC')
+Asset.objects.get_or_create(currency=usdc, exchange=Market.Exchange.MEXC.value)
 
 for key, value in currencies.items():
     currency, _ = Currency.objects.get_or_create(symbol=key, precision=value)
