@@ -560,6 +560,8 @@ class ArbitragePosition(BaseModel):
         if not self.pk:
             usdt_asset = Asset.objects.get(currency=self.source_market.second_currency,
                                            exchange=self.source_market.exchange).value
+            if usdt_asset <= 5:
+                raise Exception("Not enough USD")
             amount_to_buy = (usdt_asset / self.source_price) * Decimal('0.99')
             order = Order.objects.create(market=self.source_market, amount=amount_to_buy,
                                          side=Order.Side.BUY.value, order_type=Order.OrderType.ImmediateOrCancel.value,
