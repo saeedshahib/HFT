@@ -623,6 +623,10 @@ class ArbitragePosition(BaseModel):
                 arbitrage_position.pnl_percent = ((arbitrage_position.closed_price - arbitrage_position.source_price) /
                                                   arbitrage_position.source_price)
                 arbitrage_position.pnl = order.filled_amount * (1 + arbitrage_position.pnl_percent)
+                if arbitrage_position.pnl > 0:
+                    arbitrage_position.status = ArbitragePosition.ArbitrageStatus.ClosedWithTP.value
+                else:
+                    arbitrage_position.status = ArbitragePosition.ArbitrageStatus.ClosedWithSL.value
                 arbitrage_position.save(update_fields=['closed_price', 'status', 'pnl_percent', 'updated_at'])
 
 
