@@ -32,7 +32,7 @@ def get_and_update_orders():
                     continue
                 order = Order.objects.get(id=order_id)
                 if order.status in [Order.Status.PENDING.value, Order.Status.PARTIALLY_FIELD.value]:
-                    data = mexc_spot.order_details(symbol=order.symbol, order_id=order_id)
+                    data = mexc_spot.order_details(symbol=order.market.symbol, order_id=order_id)
                     print(data)
                     ArbitragePosition.update_status_based_on_websocket_payload(
                         order_id=order_id,
@@ -46,4 +46,4 @@ def get_and_update_orders():
 
 while True:
     get_and_update_orders()
-    time.sleep(5)
+    time.sleep(10)
