@@ -574,15 +574,13 @@ class ArbitragePosition(BaseModel):
 
     def check_and_close_position(self, reached_price):
         reached_price = Decimal(str(reached_price))
-        if reached_price >= self.target_price or reached_price <= self.source_price * Decimal('0.999'):
-            if reached_price <= self.source_price * Decimal('0.99'):
-                if self.close_order.status in [Order.Status.PENDING.value, Order.Status.PARTIALLY_FIELD.value]:
-                    return
+        if reached_price <= self.source_price * Decimal('0.99'):
+            if self.close_order.status in [Order.Status.PENDING.value, Order.Status.PARTIALLY_FIELD.value]:
                 self.close_order.cancel_order()
             print("go close position")
             self.status = self.ArbitrageStatus.CloseRequested.value
             order = Order.objects.create(market=self.source_market, amount=self.open_order.filled_amount,
-                                         price=self.source_price * Decimal('0.99'),
+                                         price=self.source_price * Decimal('0.95'),
                                          side=Order.Side.SELL.value, order_type=Order.OrderType.ImmediateOrCancel.value)
             self.close_order = order
             order.execute()

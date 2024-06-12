@@ -38,7 +38,7 @@ def handle_assets_message(message):
     try:
         print(message)
         data = message['d']
-        currency = Currency.objects.get(symbol=data['a'])
+        currency, _ = Currency.objects.get_or_create(symbol=data['a'], defaults=dict(precision=8))
         value = Decimal(data['f'])
         asset, _ = Asset.objects.update_or_create(currency=currency, exchange=Market.Exchange.MEXC.value,
                                                   defaults={'value': value})
