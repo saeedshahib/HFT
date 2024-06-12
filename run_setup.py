@@ -23,8 +23,8 @@ currencies = dict(
     FTM=7,
     CEL=4
 )
-usdt = Currency.objects.get_or_create(symbol='USDT', defaults=dict(precision=8))
-usdc = Currency.objects.get_or_create(symbol='USDC', defaults=dict(precision=8))
+usdt, _ = Currency.objects.get_or_create(symbol='USDT', defaults=dict(precision=8))
+usdc, _ = Currency.objects.get_or_create(symbol='USDC', defaults=dict(precision=8))
 Asset.objects.get_or_create(currency=usdc, exchange=Market.Exchange.MEXC.value)
 
 for key, value in currencies.items():
