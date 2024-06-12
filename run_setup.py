@@ -12,6 +12,9 @@ django.setup()
 from trading.models import Market, Currency, Asset
 
 currencies = dict(
+    AVAX=2,
+    XRP=2,
+    WAVES=2,
     OP=2,
     FTT=4,
     MATIC=5,

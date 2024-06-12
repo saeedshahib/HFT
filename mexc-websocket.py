@@ -89,8 +89,5 @@ subscribe()
 
 
 while True:
-    try:
-        print(global_redis_instance.get(name=f'XRPUSDC_ask_spot_mexc'))
-        time.sleep(5)
-    except:
-        print(traceback.print_exc())
+    print(global_redis_instance.get(name=f'XRPUSDC_ask_spot_mexc'))
+    time.sleep(5)
