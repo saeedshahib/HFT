@@ -574,6 +574,8 @@ class ArbitragePosition(BaseModel):
         reached_price = Decimal(str(reached_price))
         if reached_price >= self.target_price or reached_price <= self.source_price * Decimal('0.999'):
             if reached_price <= self.source_price * Decimal('0.99'):
+                if self.close_order.status in [Order.Status.PENDING.value, Order.Status.PARTIALLY_FIELD.value]:
+                    return
                 self.close_order.cancel_order()
             print("go close position")
             self.status = self.ArbitrageStatus.CloseRequested.value

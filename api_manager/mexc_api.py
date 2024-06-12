@@ -136,3 +136,6 @@ class MEXCSpot(APIManagerInterface):
 
     def cancel_order(self, symbol, order_id):
         self.spot_obj.cancel_order(symbol=symbol, new_client_order_id=order_id, orig_client_order_id=order_id)
+
+    def order_details(self, symbol, order_id):
+        return self.spot_obj.query_order(symbol=symbol, orig_client_order_id=order_id)
