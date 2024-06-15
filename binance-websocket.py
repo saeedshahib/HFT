@@ -30,7 +30,7 @@ def main():
             difference = (binance_price - mexc_ask_price) / mexc_ask_price
             # mexc_bid_price = Decimal(global_redis_instance.get(name=f'{symbol}_bid_spot_mexc'))
 
-            if difference >= Decimal('0.002'):
+            if difference >= Decimal('0.003'):
                 print(difference)
                 print(f"arbitrage found in {symbol}, binance price is "
                       f"{binance_price} and mexc ask price is {mexc_ask_price}")
