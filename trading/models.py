@@ -78,7 +78,7 @@ class Order(BaseModel):
         CANCELLED = "Cancelled"
 
     market = models.ForeignKey("Market", on_delete=models.SET_NULL, null=True)
-    position = models.ForeignKey("Position", on_delete=models.SET_NULL, null=True)
+    position = models.ForeignKey("Position", on_delete=models.SET_NULL, null=True, blank=True)
     symbol = models.CharField(max_length=50)
     order_type = models.CharField(max_length=50, choices=OrderType.choices)
     side = models.CharField(max_length=50, choices=Side.choices)
@@ -545,15 +545,15 @@ class ArbitragePosition(BaseModel):
         ClosedWithTP = 'Closed with tp'
         ClosedWithSL = 'Closed with sl'
 
-    open_order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, related_name='open_order')
-    close_order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, related_name='close_order')
+    open_order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, related_name='open_order', blank=True)
+    close_order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, related_name='close_order', blank=True)
     source_market = models.ForeignKey(Market, on_delete=models.SET_NULL, null=True, related_name='source_market')
     source_price = models.DecimalField(max_digits=32, decimal_places=16)
     target_market = models.ForeignKey(Market, on_delete=models.SET_NULL, null=True, related_name='target_market')
     target_price = models.DecimalField(max_digits=32, decimal_places=16)
-    closed_price = models.DecimalField(max_digits=32, decimal_places=16, null=True)
-    pnl = models.DecimalField(max_digits=32, decimal_places=16, null=True)
-    pnl_percent = models.DecimalField(max_digits=32, decimal_places=16, null=True)
+    closed_price = models.DecimalField(max_digits=32, decimal_places=16, null=True, blank=True)
+    pnl = models.DecimalField(max_digits=32, decimal_places=16, null=True, blank=True)
+    pnl_percent = models.DecimalField(max_digits=32, decimal_places=16, null=True, blank=True)
     status = models.CharField(choices=ArbitrageStatus.choices, default=ArbitrageStatus.Pending.value, max_length=32)
 
     def save(self, *args, **kwargs):
