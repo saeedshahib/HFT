@@ -35,11 +35,12 @@ def get_and_update_orders():
                     print(order.market.symbol, order_id)
                     data = mexc_spot.order_details(symbol=order.market.symbol, order_id=order_id)
                     print(data)
-                    ArbitragePosition.update_status_based_on_websocket_payload(
-                        order_id=order_id,
-                        filled_amount=Decimal(str(data['executedQty'])),
-                        avg_price=Decimal(str(data['price']))
-                    )
+                    if data['status'] in ['FILLED', 'PARTIALLY_CANCELED', 'CANCELED']:
+                        ArbitragePosition.update_status_based_on_websocket_payload(
+                            order_id=order_id,
+                            filled_amount=Decimal(str(data['executedQty'])),
+                            avg_price=Decimal(str(data['price']))
+                        )
 
     except Exception:
         print(traceback.print_exc())
