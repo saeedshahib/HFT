@@ -627,7 +627,7 @@ class ArbitragePosition(BaseModel):
                     arbitrage_position.status = ArbitragePosition.ArbitrageStatus.ClosedWithTP.value
                 else:
                     arbitrage_position.status = ArbitragePosition.ArbitrageStatus.ClosedWithSL.value
-                arbitrage_position.save(update_fields=['closed_price', 'status', 'pnl_percent', 'updated_at'])
+                arbitrage_position.save(update_fields=['closed_price', 'status', 'pnl', 'pnl_percent', 'updated_at'])
 
 
 class Asset(BaseModel):
