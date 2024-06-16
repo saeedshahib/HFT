@@ -1,10 +1,7 @@
 from django.contrib import admin
 from django.db.models import ForeignKey, OneToOneField
-from django.db import models
 from django.urls import reverse, re_path
 from django.utils.html import format_html
-
-from utils.widgets import CustomDateTimeWidget
 
 
 # Register your models here.
@@ -36,16 +33,9 @@ def get_common_elements(list1, list2):
 
 class BaseAdmin(RawIdFieldForAllMixin, admin.ModelAdmin):
     readonly_fields = ["created_at", "updated_at"]
-    list_display = ('created_at', 'updated_at')
-    fields = ('created_at', 'updated_at')
 
     model = None
     not_displayed_fields = ['trace']
-
-    def formfield_for_dbfield(self, db_field, request, **kwargs):
-        if isinstance(db_field, models.DateTimeField):
-            kwargs['widget'] = CustomDateTimeWidget()
-        return super().formfield_for_dbfield(db_field, request, **kwargs)
 
     def get_list_display(self, request):
         if self.model is not None:
