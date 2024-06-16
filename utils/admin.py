@@ -36,6 +36,8 @@ def get_common_elements(list1, list2):
 
 class BaseAdmin(RawIdFieldForAllMixin, admin.ModelAdmin):
     readonly_fields = ["created_at", "updated_at"]
+    list_display = ('created_at', 'updated_at')
+    fields = ('created_at', 'updated_at')
 
     model = None
     not_displayed_fields = ['trace']
