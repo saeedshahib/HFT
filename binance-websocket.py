@@ -24,22 +24,23 @@ def main():
         try:
             symbol = msg['data']['s']
             first_currency_symbol = str(symbol).replace('USDT', '')
-            binance_price = Decimal(msg['data']['a'])
+            binance_ask_price = Decimal(msg['data']['a'])
+            binance_bid_price = Decimal(msg['data']['b'])
             # print(f"message type: {msg['e']}")
             mexc_ask_price = Decimal(global_redis_instance.get(name=f'{first_currency_symbol}USDC_ask_spot_mexc'))
-            difference = (binance_price - mexc_ask_price) / mexc_ask_price
+            difference = (binance_ask_price - mexc_ask_price) / mexc_ask_price
             # mexc_bid_price = Decimal(global_redis_instance.get(name=f'{symbol}_bid_spot_mexc'))
 
             if difference >= Decimal('0.0035'):
                 print(difference)
                 print(f"arbitrage found in {symbol}, binance price is "
-                      f"{binance_price} and mexc ask price is {mexc_ask_price}")
+                      f"{binance_ask_price} and mexc ask price is {mexc_ask_price}")
                 mexc_market = Market.objects.get(first_currency__symbol=first_currency_symbol,
                                                  second_currency__symbol="USDC",
                                                  exchange=Market.Exchange.MEXC.value)
                 binance_market = Market.objects.get(symbol=symbol, exchange=Market.Exchange.Binance.value)
                 ArbitragePosition.open_position_if_not_open(source_price=mexc_ask_price, source_market=mexc_market,
-                                                            target_price=binance_price, target_market=binance_market)
+                                                            target_price=binance_bid_price, target_market=binance_market)
         except Exception as e:
             print(traceback.format_exc())
 
