@@ -1,6 +1,7 @@
 import os
 import time
 import traceback
+import json
 from decimal import Decimal
 
 import django
@@ -22,9 +23,9 @@ def handle_order_book_message(message):
     symbol = message['s']
     ask_price = message['d']['asks'][0]['p']
     bid_price = message['d']['bids'][0]['p']
+    data = json.dumps(dict(ask_price=ask_price, bid_price=bid_price))
     # handle websocket message
-    global_redis_instance.set(name=f'{symbol}_ask_spot_mexc', value=ask_price)
-    global_redis_instance.set(name=f'{symbol}_bid_spot_mexc', value=bid_price)
+    global_redis_instance.set(name=f'{symbol}_price_spot_mexc', value=data)
     try:
         mexc_market = Market.objects.get(symbol=symbol, exchange=Market.Exchange.MEXC.value)
         open_positions = ArbitragePosition.objects.filter(source_market=mexc_market,
@@ -58,5 +59,8 @@ subscribe()
 
 
 while True:
-    print(global_redis_instance.get(name=f'XRPUSDC_ask_spot_mexc'))
-    time.sleep(5)
+    try:
+        print(json.loads(global_redis_instance.get(name=f'XRPUSDC_price_spot_mexc'))['ask_price'])
+        time.sleep(5)
+    except TypeError:
+        pass

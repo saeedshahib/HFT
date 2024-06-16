@@ -595,8 +595,8 @@ class ArbitragePosition(BaseModel):
             return
         ArbitragePosition.objects.create(source_market=source_market, target_market=target_market,
                                          status=ArbitragePosition.ArbitrageStatus.Pending.value,
-                                         source_price=source_price * Decimal('1.005'),
-                                         target_price=target_price * Decimal('0.995'))
+                                         source_price=source_price * Decimal('1.002'),
+                                         target_price=target_price)
 
     @staticmethod
     def update_status_based_on_websocket_payload(order_id, filled_amount, avg_price=None):

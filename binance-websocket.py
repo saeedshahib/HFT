@@ -1,5 +1,6 @@
 import os
 import traceback
+import json
 from decimal import Decimal
 import time
 
@@ -27,20 +28,30 @@ def main():
             binance_ask_price = Decimal(msg['data']['a'])
             binance_bid_price = Decimal(msg['data']['b'])
             # print(f"message type: {msg['e']}")
-            mexc_ask_price = Decimal(global_redis_instance.get(name=f'{first_currency_symbol}USDC_ask_spot_mexc'))
+            mexc_price_data = json.loads(global_redis_instance.get(name=f'{first_currency_symbol}USDC_price_spot_mexc'))
+            mexc_ask_price = Decimal(mexc_price_data['ask_price'])
+            mexc_bid_price = Decimal(mexc_price_data['bid_price'])
+            spread = (mexc_ask_price - mexc_bid_price) / mexc_bid_price
+            profit = Decimal('0.001')
+            commission = Decimal('0.002')
             difference = (binance_ask_price - mexc_ask_price) / mexc_ask_price
             # mexc_bid_price = Decimal(global_redis_instance.get(name=f'{symbol}_bid_spot_mexc'))
 
-            if difference >= Decimal('0.0035'):
-                print(difference)
+            if difference >= spread + commission + profit:
+                print(difference, spread)
                 print(f"arbitrage found in {symbol}, binance price is "
                       f"{binance_ask_price} and mexc ask price is {mexc_ask_price}")
+                source_price = mexc_ask_price
+                target_price = binance_bid_price * (1 - spread)
+                if target_price <= source_price * (1 + commission):
+                    raise Exception(f"not profitable arbitrage!, target price is {target_price} and source_price is "
+                                    f"{source_price} and with commission is {source_price * (1 + commission)}")
                 mexc_market = Market.objects.get(first_currency__symbol=first_currency_symbol,
                                                  second_currency__symbol="USDC",
                                                  exchange=Market.Exchange.MEXC.value)
                 binance_market = Market.objects.get(symbol=symbol, exchange=Market.Exchange.Binance.value)
-                ArbitragePosition.open_position_if_not_open(source_price=mexc_ask_price, source_market=mexc_market,
-                                                            target_price=binance_bid_price, target_market=binance_market)
+                ArbitragePosition.open_position_if_not_open(source_price=source_price, source_market=mexc_market,
+                                                            target_price=target_price, target_market=binance_market)
         except Exception as e:
             print(traceback.format_exc())
 
