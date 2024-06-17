@@ -595,7 +595,7 @@ class ArbitragePosition(BaseModel):
             return
         ArbitragePosition.objects.create(source_market=source_market, target_market=target_market,
                                          status=ArbitragePosition.ArbitrageStatus.Pending.value,
-                                         source_price=source_price * Decimal('1.002'),
+                                         source_price=source_price,
                                          target_price=target_price)
 
     @staticmethod
