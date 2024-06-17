@@ -20,10 +20,11 @@ api_secret = settings.MEXC_API_SECRET
 
 
 def handle_order_book_message(message):
+    timestamp = int(message['t']) // 1000
     symbol = message['s']
     ask_price = message['d']['asks'][0]['p']
     bid_price = message['d']['bids'][0]['p']
-    data = json.dumps(dict(ask_price=ask_price, bid_price=bid_price))
+    data = json.dumps(dict(ask_price=ask_price, bid_price=bid_price, timestamp=timestamp))
     # handle websocket message
     global_redis_instance.set(name=f'{symbol}_price_spot_mexc', value=data)
     try:

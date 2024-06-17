@@ -31,6 +31,10 @@ def main():
             mexc_price_data = json.loads(global_redis_instance.get(name=f'{first_currency_symbol}USDC_price_spot_mexc'))
             mexc_ask_price = Decimal(mexc_price_data['ask_price'])
             mexc_bid_price = Decimal(mexc_price_data['bid_price'])
+            mexc_update_time = int(mexc_price_data['timestamp'])
+            now = int(time.time())
+            if now - mexc_update_time > 2:
+                raise Exception(f"old data!, {now - mexc_update_time}")
             spread = (mexc_ask_price - mexc_bid_price) / mexc_bid_price
             profit = Decimal('0.001')
             commission = Decimal('0.002')
