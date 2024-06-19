@@ -36,7 +36,7 @@ def main():
             if now - mexc_update_time > 2:
                 raise Exception(f"old data!, {now - mexc_update_time}")
             spread = (mexc_ask_price - mexc_bid_price) / mexc_bid_price
-            profit = Decimal('0.001')
+            profit = Decimal('0.003')
             commission = Decimal('0.002')
             difference = (binance_ask_price - mexc_ask_price) / mexc_ask_price
             # mexc_bid_price = Decimal(global_redis_instance.get(name=f'{symbol}_bid_spot_mexc'))
