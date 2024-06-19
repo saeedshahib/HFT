@@ -11,7 +11,7 @@ django.setup()
 
 from trading.models import Market, Currency, Asset
 
-currencies = dict(
+usdc_currencies = dict(
     AVAX=2,
     XRP=2,
     WAVES=2,
@@ -24,15 +24,42 @@ currencies = dict(
     LUNC=5,
     SHIB=10,
     FTM=7,
-    CEL=4
 )
+usdt_currencies = dict(
+    CEL=4,
+    CVX=3,
+    GFT=6,
+    AR=3,
+    TAO=2,
+    BNX=4,
+    CTK=4,
+    SUI=4,
+)
+
 usdt, _ = Currency.objects.get_or_create(symbol='USDT', defaults=dict(precision=8))
 usdc, _ = Currency.objects.get_or_create(symbol='USDC', defaults=dict(precision=8))
 Asset.objects.get_or_create(currency=usdc, exchange=Market.Exchange.MEXC.value, defaults=dict(value=Decimal('40')))
+Asset.objects.get_or_create(currency=usdt, exchange=Market.Exchange.MEXC.value, defaults=dict(value=Decimal('40')))
 
-for key, value in currencies.items():
-    currency, _ = Currency.objects.get_or_create(symbol=key, precision=value)
-    Market.objects.get_or_create(exchange=Market.Exchange.MEXC.value, symbol=f'{key}USDC', first_currency=currency,
-                                 second_currency=usdc, market_type=Market.Type.Spot.value)
-    Market.objects.get_or_create(exchange=Market.Exchange.Binance.value, symbol=f'{key}USDT', first_currency=currency,
-                                 second_currency=usdt, market_type=Market.Type.Spot.value)
+
+def create_usdc_markets():
+    for key, value in usdc_currencies.items():
+        currency, _ = Currency.objects.get_or_create(symbol=key, precision=value)
+        Market.objects.get_or_create(exchange=Market.Exchange.MEXC.value, symbol=f'{key}USDC', first_currency=currency,
+                                     second_currency=usdc, market_type=Market.Type.Spot.value)
+        Market.objects.get_or_create(exchange=Market.Exchange.Binance.value, symbol=f'{key}USDT', first_currency=currency,
+                                     second_currency=usdt, market_type=Market.Type.Spot.value)
+
+
+def create_usdt_markets():
+    for key, value in usdt_currencies.items():
+        currency, _ = Currency.objects.get_or_create(symbol=key, precision=value)
+        Market.objects.get_or_create(exchange=Market.Exchange.MEXC.value, symbol=f'{key}USDT',
+                                     first_currency=currency,
+                                     second_currency=usdt, market_type=Market.Type.Spot.value)
+        Market.objects.get_or_create(exchange=Market.Exchange.Binance.value, symbol=f'{key}USDT',
+                                     first_currency=currency,
+                                     second_currency=usdt, market_type=Market.Type.Spot.value)
+
+if __name__ == '__main__':
+    create_usdt_markets()

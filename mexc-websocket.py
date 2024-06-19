@@ -41,19 +41,19 @@ ws_spot_client = spot.WebSocket(api_key=api_key, api_secret=api_secret)
 
 
 def subscribe():
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'AVAXUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'XRPUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'WAVESUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'OPUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTTUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'MATICUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'APEUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'JASMYUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNAUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNCUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'SHIBUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTMUSDC', 5)
-    ws_spot_client.limit_depth_stream(handle_order_book_message, 'CELUSDC', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'CELUSDT', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'CVXUSDT', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'GFTUSDT', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'ARUSDT', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'TAOUSDT', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'BNXUSDT', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'CTKUSDT', 5)
+    ws_spot_client.limit_depth_stream(handle_order_book_message, 'SUIUSDT', 5)
+    # ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNAUSDC', 5)
+    # ws_spot_client.limit_depth_stream(handle_order_book_message, 'LUNCUSDC', 5)
+    # ws_spot_client.limit_depth_stream(handle_order_book_message, 'SHIBUSDC', 5)
+    # ws_spot_client.limit_depth_stream(handle_order_book_message, 'FTMUSDC', 5)
+    # ws_spot_client.limit_depth_stream(handle_order_book_message, 'CELUSDC', 5)
 
 
 subscribe()
@@ -61,7 +61,7 @@ subscribe()
 
 while True:
     try:
-        print(json.loads(global_redis_instance.get(name=f'XRPUSDC_price_spot_mexc'))['ask_price'])
+        print(json.loads(global_redis_instance.get(name=f'SUIUSDT_price_spot_mexc'))['ask_price'])
         time.sleep(5)
     except TypeError:
         pass
