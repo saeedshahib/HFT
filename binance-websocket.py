@@ -46,7 +46,7 @@ def main():
                 print(f"arbitrage found in {symbol}, binance price is "
                       f"{binance_ask_price} and mexc ask price is {mexc_ask_price}")
                 source_price = mexc_ask_price
-                target_price = binance_bid_price * (1 - spread)
+                target_price = mexc_bid_price * (1 + difference)
                 if target_price <= source_price * (1 + commission):
                     raise Exception(f"not profitable arbitrage!, target price is {target_price} and source_price is "
                                     f"{source_price} and with commission is {source_price * (1 + commission)}")

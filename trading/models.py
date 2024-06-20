@@ -573,7 +573,7 @@ class ArbitragePosition(BaseModel):
                                          price=self.source_price)
             self.open_order = order
             tp_order = Order.objects.create(market=self.source_market,
-                                            amount=self.open_order.filled_amount,
+                                            amount=self.open_order.amount,
                                             side=Order.Side.SELL.value,
                                             order_type=Order.OrderType.LIMIT.value,
                                             price=self.target_price)
