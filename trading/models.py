@@ -572,15 +572,8 @@ class ArbitragePosition(BaseModel):
                                          side=Order.Side.BUY.value, order_type=Order.OrderType.ImmediateOrCancel.value,
                                          price=self.source_price)
             self.open_order = order
-            tp_order = Order.objects.create(market=self.source_market,
-                                            amount=self.open_order.amount,
-                                            side=Order.Side.SELL.value,
-                                            order_type=Order.OrderType.LIMIT.value,
-                                            price=self.target_price)
-            self.close_order = tp_order
             super().save(*args, **kwargs)
             order.execute()
-            self.execute_tp_order()
         else:
             super().save(*args, **kwargs)
 
@@ -620,8 +613,15 @@ class ArbitragePosition(BaseModel):
                 arbitrage_position.status = ArbitragePosition.ArbitrageStatus.Cancelled.value
                 arbitrage_position.save(update_fields=['status', 'updated_at'])
             else:
-                if arbitrage_position.close_order.status == Order.Status.PENDING.value:
-                    arbitrage_position.execute_tp_order(arbitrage_position)
+                arbitrage_position.status = ArbitragePosition.ArbitrageStatus.Open.value
+                tp_order = Order.objects.create(market=arbitrage_position.source_market,
+                                                amount=order.filled_amount,
+                                                side=Order.Side.SELL.value,
+                                                order_type=Order.OrderType.LIMIT.value,
+                                                price=arbitrage_position.target_price)
+                arbitrage_position.close_order = tp_order
+                arbitrage_position.save(update_fields=['close_order', 'close_order', 'updated_at'])
+                arbitrage_position.execute_tp_order(arbitrage_position)
         else:
             if order.filled_amount > 0:
                 arbitrage_position = ArbitragePosition.objects.get(close_order=order)
